@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -29,17 +29,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  MOCK_SCENARIOS,
-  MOCK_SCENARIO_FOLDERS,
-} from "@/mocks/data";
+import { MOCK_SCENARIO_FOLDERS } from "@/mocks/data";
 import { cn } from "@/lib/utils";
+import { fetchScenarios, deleteScenario } from "@/lib/api/scenarios";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
 
 const MAX_SCENARIO_NAME = 20;
+// backend のフォルダ一覧APIは未提供のため、取得したシナリオはすべて
+// システム既定の「未分類」フォルダ配下として表示する。
+const DEFAULT_FOLDER_ID = "sfld_default";
 
 export default function ScenariosPage() {
   const router = useRouter();
-  const [selectedFolderId, setSelectedFolderId] = useState<string>("sfld_default");
+  const { currentChannelId } = useAuth();
+  const [selectedFolderId, setSelectedFolderId] = useState<string>(DEFAULT_FOLDER_ID);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [showFolderPane, setShowFolderPane] = useState(true);
@@ -50,37 +54,37 @@ export default function ScenariosPage() {
   const [newFolderId, setNewFolderId] = useState<string>("sfld_default");
   const [insertTop, setInsertTop] = useState(false);
 
-  useEffect(() => {
-    if (createOpen) {
-      setNewName("");
-      setNewFolderId(selectedFolderId);
-      setInsertTop(false);
-    }
-  }, [createOpen, selectedFolderId]);
+  const openCreate = () => {
+    setNewName("");
+    setNewFolderId(selectedFolderId);
+    setInsertTop(false);
+    setCreateOpen(true);
+  };
+
+  const { data: scenarios, mutate } = useResource(
+    currentChannelId ? `scenarios:${currentChannelId}:${query.trim()}` : null,
+    () => fetchScenarios({ q: query.trim() || undefined }),
+  );
+  const allScenarios = useMemo(() => scenarios ?? [], [scenarios]);
 
   const folderCounts = useMemo(() => {
+    // 取得分はすべて既定フォルダに集約。
     const map = new Map<string, number>();
-    for (const s of MOCK_SCENARIOS) {
-      map.set(s.folderId, (map.get(s.folderId) ?? 0) + 1);
-    }
+    map.set(DEFAULT_FOLDER_ID, allScenarios.length);
     return map;
-  }, []);
+  }, [allScenarios]);
 
-  const filtered = useMemo(() => {
-    return MOCK_SCENARIOS.filter((s) => {
-      if (s.folderId !== selectedFolderId) return false;
-      if (query.trim()) {
-        const q = query.trim().toLowerCase();
-        if (
-          !s.name.toLowerCase().includes(q) &&
-          !(s.description?.toLowerCase().includes(q) ?? false)
-        ) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [selectedFolderId, query]);
+  // 既定フォルダ選択時のみ一覧を表示（他フォルダは未対応）。
+  const filtered = useMemo(
+    () => (selectedFolderId === DEFAULT_FOLDER_ID ? allScenarios : []),
+    [selectedFolderId, allScenarios],
+  );
+
+  async function handleBulkDelete() {
+    await Promise.all([...selectedIds].map((id) => deleteScenario(id)));
+    setSelectedIds(new Set());
+    mutate();
+  }
 
   const allCheckedInView =
     filtered.length > 0 && filtered.every((s) => selectedIds.has(s.id));
@@ -186,7 +190,7 @@ export default function ScenariosPage() {
                 </Button>
               )}
               <button
-                onClick={() => setCreateOpen(true)}
+                onClick={openCreate}
                 className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
               >
                 <FontAwesomeIcon icon={faPlus} className="size-3" />
@@ -325,6 +329,7 @@ export default function ScenariosPage() {
                 variant="outline"
                 size="sm"
                 disabled={!hasSelection}
+                onClick={handleBulkDelete}
                 className="h-9 text-destructive hover:text-destructive"
               >
                 <FontAwesomeIcon icon={faTrash} className="size-3" />
