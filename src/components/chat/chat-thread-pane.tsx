@@ -22,21 +22,25 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ChatBubble } from "@/components/chat/chat-bubble";
 import { EmptyState } from "@/components/empty-state";
 import { faComments } from "@fortawesome/free-solid-svg-icons";
-import { getFriend, getMessagesByFriend } from "@/mocks/data";
+import { type MockFriend } from "@/mocks/data";
+import { fetchFriendMessages } from "@/lib/api/friends";
+import { useResource } from "@/lib/api/use-resource";
 
 export function ChatThreadPane({
-  friendId,
+  friend,
   mobileVisible = true,
   onBack,
   onShowInfo,
 }: {
-  friendId: string | null;
+  friend: MockFriend | undefined;
   mobileVisible?: boolean;
   onBack?: () => void;
   onShowInfo?: () => void;
 }) {
-  const friend = friendId ? getFriend(friendId) : undefined;
-  const messages = friendId ? getMessagesByFriend(friendId) : [];
+  const { data: messages = [] } = useResource(
+    friend ? `messages:${friend.id}` : null,
+    () => fetchFriendMessages(friend!.id),
+  );
 
   const mobileVisibilityClass = mobileVisible ? "flex" : "hidden";
 

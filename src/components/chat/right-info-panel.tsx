@@ -21,24 +21,45 @@ import {
 } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { TagBadge } from "@/components/tag-badge";
-import {
-  MOCK_TAGS,
-  type MockFriend,
-  getScenarioById,
-} from "@/mocks/data";
+import { type MockFriend } from "@/mocks/data";
 import { formatDateTime } from "@/lib/time";
+import { useState } from "react";
+import { fetchTags } from "@/lib/api/tags";
+import { attachFriendTag, detachFriendTag } from "@/lib/api/friends";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
 
 export function RightInfoPanel({
   friend,
   mobileVisible = false,
   onBack,
+  onChanged,
 }: {
   friend: MockFriend;
   mobileVisible?: boolean;
   onBack?: () => void;
+  onChanged?: () => void;
 }) {
-  const tags = MOCK_TAGS.filter((t) => friend.tagIds.includes(t.id));
-  const scenario = getScenarioById(friend.scenarioId);
+  const { currentChannelId } = useAuth();
+  const { data: allTags } = useResource(
+    currentChannelId ? `tags:${currentChannelId}` : null,
+    () => fetchTags(),
+  );
+  const tags = (allTags ?? []).filter((t) => friend.tagIds.includes(t.id));
+  const [showTagPicker, setShowTagPicker] = useState(false);
+  const [busyTagId, setBusyTagId] = useState<string | null>(null);
+  const assignable = (allTags ?? []).filter((t) => !friend.tagIds.includes(t.id));
+
+  async function toggleTag(tagId: string, attached: boolean) {
+    setBusyTagId(tagId);
+    try {
+      if (attached) await detachFriendTag(friend.id, tagId);
+      else await attachFriendTag(friend.id, tagId);
+      onChanged?.();
+    } finally {
+      setBusyTagId(null);
+    }
+  }
 
   return (
     <aside
@@ -84,7 +105,9 @@ export function RightInfoPanel({
             </InfoRow>
 
             <InfoRow label="システム表示名" action={<EditIconBtn />}>
-              <div className="text-sm text-muted-foreground">—</div>
+              <div className="text-sm text-muted-foreground">
+                {friend.systemDisplayName ?? "—"}
+              </div>
             </InfoRow>
 
             <InfoRow label="流入経路">
@@ -97,13 +120,8 @@ export function RightInfoPanel({
               action={<EditIconBtn />}
             >
               <div className="text-sm">
-                {scenario ? scenario.name : "配信中のステップなし"}
+                {friend.scenarioStepLabel ?? "配信中のステップなし"}
               </div>
-              {friend.scenarioStepLabel && (
-                <div className="text-[11px] text-muted-foreground mt-0.5">
-                  {friend.scenarioStepLabel}
-                </div>
-              )}
             </InfoRow>
 
             <InfoRow
@@ -139,12 +157,50 @@ export function RightInfoPanel({
                   タグはまだありません
                 </div>
               ) : (
-                tags.map((t) => <TagBadge key={t.id} tag={t} />)
+                tags.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    disabled={busyTagId === t.id}
+                    onClick={() => toggleTag(t.id, true)}
+                    className="disabled:opacity-50"
+                    title="クリックで解除"
+                  >
+                    <TagBadge tag={t} />
+                  </button>
+                ))
               )}
             </div>
-            <Button variant="outline" size="sm" className="w-full">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setShowTagPicker((v) => !v)}
+            >
               タグを追加
             </Button>
+            {showTagPicker && (
+              <div className="flex flex-wrap gap-1.5 rounded-md border border-border p-2">
+                {assignable.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">
+                    追加できるタグがありません
+                  </div>
+                ) : (
+                  assignable.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      disabled={busyTagId === t.id}
+                      onClick={() => toggleTag(t.id, false)}
+                      className="disabled:opacity-50"
+                      title="クリックで追加"
+                    >
+                      <TagBadge tag={t} />
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="memo" className="space-y-3">

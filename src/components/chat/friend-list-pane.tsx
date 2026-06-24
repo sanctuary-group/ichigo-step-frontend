@@ -12,7 +12,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { FriendListItem } from "@/components/chat/friend-list-item";
 import { EmptyState } from "@/components/empty-state";
-import { MOCK_FRIENDS, type MockFriend } from "@/mocks/data";
+import { type MockFriend } from "@/mocks/data";
+import { fetchFriends } from "@/lib/api/friends";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
 
 const FILTER_LABELS: Record<string, string> = {
   all: "全ての友だち（非表示除く）",
@@ -29,19 +32,22 @@ export function FriendListPane({
   onSelect: (id: string) => void;
   mobileVisible?: boolean;
 }) {
+  const { currentChannelId } = useAuth();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "unread" | "following">("all");
 
+  // サーバ側は active モード + 検索クエリで取得し、unread/following は手元で絞り込む。
+  const { data } = useResource(
+    currentChannelId ? `chat-friends:${currentChannelId}:${query.trim()}` : null,
+    () => fetchFriends({ mode: "active", q: query.trim() || undefined, sort: "last_message_at" }),
+  );
+
   const friends = useMemo<MockFriend[]>(() => {
-    let list = MOCK_FRIENDS;
+    let list = data?.friends ?? [];
     if (filter === "unread") list = list.filter((f) => f.unreadCount > 0);
     if (filter === "following") list = list.filter((f) => f.isFollowing);
-    if (query.trim()) {
-      const q = query.trim().toLowerCase();
-      list = list.filter((f) => f.displayName.toLowerCase().includes(q));
-    }
     return list;
-  }, [query, filter]);
+  }, [data, filter]);
 
   return (
     <div

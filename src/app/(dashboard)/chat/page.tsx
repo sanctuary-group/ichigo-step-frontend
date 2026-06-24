@@ -5,16 +5,21 @@ import { useState } from "react";
 import { FriendListPane } from "@/components/chat/friend-list-pane";
 import { ChatThreadPane } from "@/components/chat/chat-thread-pane";
 import { RightInfoPanel } from "@/components/chat/right-info-panel";
-import { MOCK_FRIENDS, getFriend } from "@/mocks/data";
+import { fetchFriend } from "@/lib/api/friends";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
 
 export type ChatMobileView = "list" | "thread" | "info";
 
 export default function ChatPage() {
-  const [selectedId, setSelectedId] = useState<string | null>(
-    MOCK_FRIENDS[1]?.id ?? null
-  );
+  const { currentChannelId } = useAuth();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<ChatMobileView>("thread");
-  const friend = selectedId ? getFriend(selectedId) : undefined;
+
+  const { data: friend, mutate: refreshFriend } = useResource(
+    selectedId && currentChannelId ? `friend:${currentChannelId}:${selectedId}` : null,
+    () => fetchFriend(selectedId!),
+  );
 
   return (
     <div className="flex h-full min-h-0">
@@ -27,7 +32,7 @@ export default function ChatPage() {
         mobileVisible={view === "list"}
       />
       <ChatThreadPane
-        friendId={selectedId}
+        friend={friend}
         mobileVisible={view === "thread"}
         onBack={() => setView("list")}
         onShowInfo={() => setView("info")}
@@ -37,6 +42,7 @@ export default function ChatPage() {
           friend={friend}
           mobileVisible={view === "info"}
           onBack={() => setView("thread")}
+          onChanged={refreshFriend}
         />
       )}
     </div>
