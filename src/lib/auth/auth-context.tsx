@@ -26,7 +26,7 @@ type AuthContextValue = {
   status: AuthStatus;
   user: CurrentUser | null;
   currentChannelId: string | null;
-  login: (params: { email: string; password: string; remember?: boolean }) => Promise<void>;
+  login: (params: { email: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
   setCurrentChannel: (id: string | null) => void;
   refresh: () => Promise<void>;
@@ -76,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (params: { email: string; password: string; remember?: boolean }) => {
+    async (params: { email: string; password: string }) => {
       const boot = await apiLogin(params);
       // ログイン時はサーバの既定チャネルを採用（前ユーザーの残骸を消す）。
       setStoreChannelId(boot.currentChannelId);

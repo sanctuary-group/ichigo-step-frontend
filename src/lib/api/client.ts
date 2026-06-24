@@ -1,6 +1,6 @@
 import { API_ORIGIN, TENANT_BASE } from "./config";
-import { ensureCsrfCookie, readXsrfToken } from "./csrf";
 import { getCurrentChannelId } from "./channel-store";
+import { getToken } from "./token-store";
 
 export class ApiError extends Error {
   status: number;
@@ -31,7 +31,7 @@ export function setUnauthorizedHandler(fn: (() => void) | null): void {
 
 type ApiFetchOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
-  /** 既定では path は API_ORIGIN 直下。raw=true でそのまま、false でテナントAPIベースを前置。 */
+  /** 既定では path は API_ORIGIN 直下。tenant でテナントAPIベースを前置。 */
   base?: "tenant" | "origin";
   /** クエリパラメータ */
   query?: Record<string, string | number | boolean | null | undefined>;
@@ -50,26 +50,32 @@ function buildUrl(path: string, base: "tenant" | "origin", query?: ApiFetchOptio
   return url.toString();
 }
 
-async function doFetch(url: string, method: string, options: ApiFetchOptions): Promise<Response> {
+function buildHeaders(method: string, options: ApiFetchOptions): Headers {
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
 
   const hasBody = options.body !== undefined && options.body !== null;
   if (hasBody) headers.set("Content-Type", "application/json");
 
+  // Bearer トークン認証（別ドメイン構成）
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  // 書き込みは対象チャンネルを指定
   if (MUTATING.has(method)) {
-    await ensureCsrfCookie();
-    const token = readXsrfToken();
-    if (token) headers.set("X-XSRF-TOKEN", token);
     const channelId = getCurrentChannelId();
     if (channelId) headers.set("X-Line-Channel-Id", channelId);
   }
 
+  return headers;
+}
+
+function doFetch(url: string, method: string, options: ApiFetchOptions): Promise<Response> {
+  const hasBody = options.body !== undefined && options.body !== null;
   return fetch(url, {
     ...options,
     method,
-    credentials: "include",
-    headers,
+    headers: buildHeaders(method, options),
     body: hasBody ? JSON.stringify(options.body) : undefined,
   });
 }
@@ -89,9 +95,9 @@ async function parseError(res: Response): Promise<ApiError> {
 
 /**
  * 型付き fetch。`{ data }` 包みを unwrap して T を返す。
- * - 認証/CSRF cookie を自動付与
- * - 変更系は X-XSRF-TOKEN と X-Line-Channel-Id を付与
- * - 401 → onUnauthorized、419 → CSRF再取得して1度だけリトライ、422 → ApiError(errors)
+ * - Authorization: Bearer を自動付与
+ * - 変更系は X-Line-Channel-Id を付与
+ * - 401 → onUnauthorized、422 → ApiError(errors)
  */
 export async function apiFetch<T = unknown>(
   path: string,
@@ -101,23 +107,13 @@ export async function apiFetch<T = unknown>(
   const base = options.base ?? "tenant";
   const url = buildUrl(path, base, options.query);
 
-  let res = await doFetch(url, method, options);
-
-  // CSRF トークン切れ → 再取得して1度だけリトライ
-  if (res.status === 419) {
-    await ensureCsrfCookie(true);
-    res = await doFetch(url, method, options);
-  }
+  const res = await doFetch(url, method, options);
 
   if (res.status === 401) {
     onUnauthorized?.();
     throw await parseError(res);
   }
-
-  if (!res.ok) {
-    throw await parseError(res);
-  }
-
+  if (!res.ok) throw await parseError(res);
   if (res.status === 204) return undefined as T;
 
   const json = await res.json();
@@ -146,11 +142,7 @@ export async function apiFetchPaginated<T = unknown>(
   const base = options.base ?? "tenant";
   const url = buildUrl(path, base, options.query);
 
-  let res = await doFetch(url, method, options);
-  if (res.status === 419) {
-    await ensureCsrfCookie(true);
-    res = await doFetch(url, method, options);
-  }
+  const res = await doFetch(url, method, options);
   if (res.status === 401) {
     onUnauthorized?.();
     throw await parseError(res);
