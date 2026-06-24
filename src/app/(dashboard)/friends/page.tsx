@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faMagnifyingGlass,
@@ -14,8 +14,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { MOCK_FRIENDS } from "@/mocks/data";
 import { cn } from "@/lib/utils";
+import { fetchFriends } from "@/lib/api/friends";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
 
 type FilterMode = "active" | "hidden" | "blocked" | "blockedBy";
 
@@ -28,27 +30,25 @@ function formatYmd(iso: string): string {
 }
 
 export default function FriendsPage() {
+  const { currentChannelId } = useAuth();
   const [query, setQuery] = useState("");
+  // 入力中のテキストをそのまま使うと毎打鍵でリクエストするため、絞込みボタンで確定する。
+  const [appliedQuery, setAppliedQuery] = useState("");
   const [mode, setMode] = useState<FilterMode>("active");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const filtered = useMemo(() => {
-    return MOCK_FRIENDS.filter((f) => {
-      if (mode === "hidden" && !f.isHidden) return false;
-      if (mode === "blocked" && f.isFollowing) return false;
-      if (mode === "blockedBy") return false;
-      if (mode === "active" && (!f.isFollowing || f.isHidden)) return false;
-      if (query.trim()) {
-        const q = query.trim().toLowerCase();
-        const hay =
-          f.displayName.toLowerCase() +
-          " " +
-          (f.systemDisplayName?.toLowerCase() ?? "");
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [mode, query]);
+  // backend は active/hidden/blocked のみ対応。blockedBy は空表示（mockup と同挙動）。
+  const apiMode = mode === "blockedBy" ? null : mode;
+  const resourceKey =
+    apiMode && currentChannelId
+      ? `friends:${currentChannelId}:${apiMode}:${appliedQuery}`
+      : null;
+
+  const { data, isLoading } = useResource(resourceKey, () =>
+    fetchFriends({ mode: apiMode!, q: appliedQuery || undefined }),
+  );
+
+  const filtered = data?.friends ?? [];
 
   const allCheckedInView =
     filtered.length > 0 && filtered.every((f) => selectedIds.has(f.id));
@@ -90,6 +90,9 @@ export default function FriendsPage() {
                 placeholder="友だち名・システム表示名"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") setAppliedQuery(query.trim());
+                }}
                 className="h-10 pr-9"
               />
               <FontAwesomeIcon
@@ -97,7 +100,10 @@ export default function FriendsPage() {
                 className="size-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
               />
             </div>
-            <Button className="h-10 px-6 bg-blue-500 hover:bg-blue-600 text-white font-bold">
+            <Button
+              onClick={() => setAppliedQuery(query.trim())}
+              className="h-10 px-6 bg-blue-500 hover:bg-blue-600 text-white font-bold"
+            >
               絞込み
             </Button>
           </div>
@@ -149,7 +155,10 @@ export default function FriendsPage() {
           <Button
             variant="outline"
             disabled={!clearable}
-            onClick={() => setQuery("")}
+            onClick={() => {
+              setQuery("");
+              setAppliedQuery("");
+            }}
             className="h-9 px-6 bg-muted/60 border-border disabled:opacity-50"
           >
             クリア
@@ -196,7 +205,7 @@ export default function FriendsPage() {
                     colSpan={7}
                     className="px-3 py-12 text-sm text-center text-muted-foreground"
                   >
-                    該当する友だちはいません
+                    {isLoading ? "読み込み中…" : "該当する友だちはいません"}
                   </td>
                 </tr>
               ) : (
