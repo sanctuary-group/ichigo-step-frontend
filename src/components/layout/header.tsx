@@ -26,16 +26,24 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { MOCK_CHANNELS, MOCK_CURRENT_USER } from "@/mocks/data";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { MobileNavTrigger } from "@/components/layout/mobile-nav-trigger";
+import { useAuth } from "@/lib/auth/auth-context";
+import { fetchChannels } from "@/lib/api/channels";
+import { useResource } from "@/lib/api/use-resource";
 
 export function Header() {
-  const currentChannel = MOCK_CHANNELS[0];
+  const { user, currentChannelId, setCurrentChannel, logout } = useAuth();
+  const { data: channels } = useResource("channels", fetchChannels);
+
+  const channelList = channels ?? [];
+  const currentChannel =
+    channelList.find((c) => c.id === currentChannelId) ?? channelList[0];
+  const userName = user?.name ?? "";
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between gap-2 sm:gap-4 h-16 px-2 sm:px-4 lg:px-6 bg-background/95 backdrop-blur border-b border-border">
@@ -53,13 +61,13 @@ export function Header() {
           >
             <div className="flex items-center gap-2.5 min-w-0">
               <Avatar className="size-8">
-                <AvatarImage src={currentChannel.pictureUrl} />
+                <AvatarImage src={currentChannel?.pictureUrl} />
                 <AvatarFallback>
-                  {currentChannel.name.slice(0, 1)}
+                  {(currentChannel?.name ?? "?").slice(0, 1)}
                 </AvatarFallback>
               </Avatar>
               <span className="truncate text-sm font-medium">
-                {currentChannel.name}
+                {currentChannel?.name ?? "アカウント未選択"}
               </span>
             </div>
             <FontAwesomeIcon
@@ -71,8 +79,12 @@ export function Header() {
             <DropdownMenuGroup>
               <DropdownMenuLabel>LINE 公式アカウント</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {MOCK_CHANNELS.map((c) => (
-                <DropdownMenuItem key={c.id} className="gap-2 py-2">
+              {channelList.map((c) => (
+                <DropdownMenuItem
+                  key={c.id}
+                  className="gap-2 py-2"
+                  onClick={() => setCurrentChannel(c.id)}
+                >
                   <Avatar className="size-7">
                     <AvatarImage src={c.pictureUrl} />
                     <AvatarFallback>{c.name.slice(0, 1)}</AvatarFallback>
@@ -124,11 +136,11 @@ export function Header() {
           >
             <Avatar className="size-8">
               <AvatarFallback>
-                {MOCK_CURRENT_USER.name.slice(0, 1)}
+                {(userName || "?").slice(0, 1)}
               </AvatarFallback>
             </Avatar>
             <span className="text-sm hidden md:inline">
-              {MOCK_CURRENT_USER.name}
+              {userName}
             </span>
             <FontAwesomeIcon
               icon={faChevronDown}
@@ -139,10 +151,10 @@ export function Header() {
             <div className="flex items-center gap-3 px-2 py-2">
               <Avatar className="size-10">
                 <AvatarFallback>
-                  {MOCK_CURRENT_USER.name.slice(0, 1)}
+                  {(userName || "?").slice(0, 1)}
                 </AvatarFallback>
               </Avatar>
-              <div className="text-base font-bold">{MOCK_CURRENT_USER.name}</div>
+              <div className="text-base font-bold">{userName}</div>
             </div>
             <DropdownMenuSeparator />
             <div className="flex items-center gap-2 px-2 py-2.5 text-sm">
@@ -183,7 +195,7 @@ export function Header() {
               決済履歴・領収書
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="gap-3 py-2.5">
+            <DropdownMenuItem className="gap-3 py-2.5" onClick={() => logout()}>
               <FontAwesomeIcon
                 icon={faRightFromBracket}
                 className="size-4 text-muted-foreground"

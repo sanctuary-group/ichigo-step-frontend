@@ -1,4 +1,5 @@
 import { StrawberryIcon } from "@/components/strawberry-icon";
+import { RequireGuest } from "@/components/auth/route-guard";
 
 export default function AuthLayout({
   children,
@@ -6,6 +7,7 @@ export default function AuthLayout({
   children: React.ReactNode;
 }) {
   return (
+    <RequireGuest>
     <div className="relative flex-1 flex flex-col items-center justify-center px-4 py-8 sm:py-12 bg-muted/30 overflow-hidden">
       <div
         className="pointer-events-none absolute inset-x-0 bottom-0 h-48 bg-primary/15"
@@ -23,5 +25,6 @@ export default function AuthLayout({
         <div className="w-full">{children}</div>
       </div>
     </div>
+    </RequireGuest>
   );
 }
