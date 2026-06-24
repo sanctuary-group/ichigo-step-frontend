@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -22,8 +22,12 @@ import {
 } from "@/components/ui/select";
 import { TagBadge } from "@/components/tag-badge";
 import { BroadcastStatusBadge } from "@/components/broadcasts/status-badge";
-import { MOCK_BROADCASTS, MOCK_TAGS, type MockBroadcast } from "@/mocks/data";
+import { type MockBroadcast } from "@/mocks/data";
 import { cn } from "@/lib/utils";
+import { fetchBroadcasts, deleteBroadcast } from "@/lib/api/broadcasts";
+import { fetchTags } from "@/lib/api/tags";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
 
 type TabId = "scheduled" | "draft" | "history";
 
@@ -44,27 +48,44 @@ function formatDt(iso?: string): string {
 }
 
 export default function BroadcastsPage() {
+  const { currentChannelId } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId>("scheduled");
   const [allPeriod, setAllPeriod] = useState(true);
   const [yearMonth, setYearMonth] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [pageSize, setPageSize] = useState("100");
 
-  const items = useMemo(() => {
-    const tab = TABS.find((t) => t.id === activeTab)!;
-    return MOCK_BROADCASTS.filter((b) => tab.statuses.includes(b.status))
-      .filter((b) => {
-        if (allPeriod || !yearMonth) return true;
-        const when = b.scheduledAt ?? b.sentAt;
-        if (!when) return false;
-        return when.startsWith(yearMonth);
-      })
-      .sort((a, b) => {
-        const aw = a.scheduledAt ?? a.sentAt ?? "";
-        const bw = b.scheduledAt ?? b.sentAt ?? "";
-        return bw.localeCompare(aw);
-      });
-  }, [activeTab, allPeriod, yearMonth]);
+  const month = !allPeriod && yearMonth ? yearMonth : undefined;
+  const { data: broadcasts, mutate } = useResource(
+    currentChannelId
+      ? `broadcasts:${currentChannelId}:${activeTab}:${month ?? "all"}`
+      : null,
+    () => fetchBroadcasts({ tab: activeTab, month }),
+  );
+  const { data: tagList } = useResource(
+    currentChannelId ? `tags:${currentChannelId}` : null,
+    () => fetchTags(),
+  );
+  const tags = tagList ?? [];
+
+  // サーバ側で tab/month による絞込み・並べ替え済み。
+  const items = broadcasts ?? [];
+
+  async function handleDelete(id: string) {
+    await deleteBroadcast(id);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    mutate();
+  }
+
+  async function handleBulkDelete() {
+    await Promise.all([...selectedIds].map((id) => deleteBroadcast(id)));
+    setSelectedIds(new Set());
+    mutate();
+  }
 
   const allCheckedInView =
     items.length > 0 && items.every((it) => selectedIds.has(it.id));
@@ -230,6 +251,7 @@ export default function BroadcastsPage() {
             variant="outline"
             size="sm"
             disabled={!hasSelection}
+            onClick={handleBulkDelete}
             className="ml-auto h-10 text-destructive hover:text-destructive"
           >
             <FontAwesomeIcon icon={faTrash} className="size-3" />
@@ -271,7 +293,7 @@ export default function BroadcastsPage() {
                 </tr>
               ) : (
                 items.map((b) => {
-                  const tag = MOCK_TAGS.find((t) => t.id === b.targetTagId);
+                  const tag = tags.find((t) => t.id === b.targetTagId);
                   return (
                     <tr
                       key={b.id}
@@ -356,7 +378,7 @@ export default function BroadcastsPage() {
                 </tr>
               ) : (
                 items.map((b) => {
-                  const tag = MOCK_TAGS.find((t) => t.id === b.targetTagId);
+                  const tag = tags.find((t) => t.id === b.targetTagId);
                   const checked = selectedIds.has(b.id);
                   return (
                     <tr
@@ -416,6 +438,7 @@ export default function BroadcastsPage() {
                             variant="ghost"
                             size="icon-sm"
                             aria-label="削除"
+                            onClick={() => handleDelete(b.id)}
                             className="text-muted-foreground hover:text-destructive"
                           >
                             <FontAwesomeIcon
@@ -475,7 +498,7 @@ export default function BroadcastsPage() {
                 </tr>
               ) : (
                 items.map((b) => {
-                  const tag = MOCK_TAGS.find((t) => t.id === b.targetTagId);
+                  const tag = tags.find((t) => t.id === b.targetTagId);
                   const when = b.scheduledAt ?? b.sentAt;
                   const checked = selectedIds.has(b.id);
                   return (
@@ -543,6 +566,7 @@ export default function BroadcastsPage() {
                             variant="ghost"
                             size="icon-sm"
                             aria-label="削除"
+                            onClick={() => handleDelete(b.id)}
                             className="text-muted-foreground hover:text-destructive"
                           >
                             <FontAwesomeIcon
