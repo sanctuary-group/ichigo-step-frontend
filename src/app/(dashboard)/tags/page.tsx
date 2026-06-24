@@ -15,6 +15,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -22,10 +23,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MOCK_TAGS, MOCK_TAG_FOLDERS } from "@/mocks/data";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { MOCK_TAG_FOLDERS } from "@/mocks/data";
 import { cn } from "@/lib/utils";
+import { fetchTags, createTag, deleteTag } from "@/lib/api/tags";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
 
 export default function TagsPage() {
+  const { currentChannelId } = useAuth();
   const [selectedFolderId, setSelectedFolderId] = useState<string>("tagf_default");
   const [query, setQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -33,17 +46,52 @@ export default function TagsPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [pageSize, setPageSize] = useState("100");
 
+  const { data: tags, mutate } = useResource(
+    currentChannelId ? `tags-page:${currentChannelId}` : null,
+    () => fetchTags(),
+  );
+  const allTags = useMemo(() => tags ?? [], [tags]);
+
+  // 新規作成ダイアログ
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState("#22c55e");
+  const [saving, setSaving] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  async function handleCreate() {
+    setSaving(true);
+    setCreateError(null);
+    try {
+      await createTag({ name: newName.trim(), color: newColor, tag_folder_id: null });
+      setNewName("");
+      setCreateOpen(false);
+      mutate();
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : "作成に失敗しました");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleBulkDelete() {
+    const ids = [...selectedIds];
+    await Promise.all(ids.map((id) => deleteTag(id)));
+    setSelectedIds(new Set());
+    mutate();
+  }
+
   const folderCounts = useMemo(() => {
     const map = new Map<string, number>();
-    for (const t of MOCK_TAGS) {
+    for (const t of allTags) {
       const fid = t.folderId ?? "tagf_default";
       map.set(fid, (map.get(fid) ?? 0) + 1);
     }
     return map;
-  }, []);
+  }, [allTags]);
 
   const filtered = useMemo(() => {
-    return MOCK_TAGS.filter((t) => {
+    return allTags.filter((t) => {
       if ((t.folderId ?? "tagf_default") !== selectedFolderId) return false;
       if (query.trim()) {
         const s = query.trim().toLowerCase();
@@ -51,7 +99,7 @@ export default function TagsPage() {
       }
       return true;
     });
-  }, [selectedFolderId, query]);
+  }, [allTags, selectedFolderId, query]);
 
   const allCheckedInView =
     filtered.length > 0 && filtered.every((t) => selectedIds.has(t.id));
@@ -142,6 +190,7 @@ export default function TagsPage() {
               <Button
                 size="sm"
                 className="h-9 bg-blue-500 hover:bg-blue-600 text-white"
+                onClick={() => setCreateOpen(true)}
               >
                 <FontAwesomeIcon icon={faPlus} className="size-3" />
                 新規作成
@@ -236,7 +285,9 @@ export default function TagsPage() {
                       colSpan={6}
                       className="px-3 py-12 text-sm text-center text-muted-foreground"
                     >
-                      タグが登録されていません
+                      {tags === undefined
+                        ? "読み込み中…"
+                        : "タグが登録されていません"}
                     </td>
                   </tr>
                 ) : (
@@ -302,6 +353,7 @@ export default function TagsPage() {
                 variant="outline"
                 size="sm"
                 disabled={selectionCount === 0}
+                onClick={handleBulkDelete}
                 className="h-9 disabled:opacity-50"
               >
                 <FontAwesomeIcon icon={faTrashCan} className="size-3.5" />
@@ -327,6 +379,50 @@ export default function TagsPage() {
           </div>
         </section>
       </div>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>タグを新規作成</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {createError && (
+              <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {createError}
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="tag-name">管理名</Label>
+              <Input
+                id="tag-name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="例: VIP"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="tag-color">カラー</Label>
+              <input
+                id="tag-color"
+                type="color"
+                value={newColor}
+                onChange={(e) => setNewColor(e.target.value)}
+                className="h-9 w-16 rounded border border-border bg-background"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>キャンセル</DialogClose>
+            <Button
+              onClick={handleCreate}
+              disabled={saving || !newName.trim()}
+              className="bg-blue-500 hover:bg-blue-600 text-white"
+            >
+              {saving ? "作成中…" : "作成"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
