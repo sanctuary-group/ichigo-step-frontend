@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faPlus,
@@ -28,10 +28,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MOCK_TEMPLATES, MOCK_TEMPLATE_FOLDERS } from "@/mocks/data";
+import { MOCK_TEMPLATE_FOLDERS } from "@/mocks/data";
 import { cn } from "@/lib/utils";
+import { fetchTemplates, deleteTemplate } from "@/lib/api/templates";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
 
 const MAX_TEMPLATE_NAME = 20;
+// backend のフォルダ一覧APIは未提供のため、取得分はすべて既定フォルダ配下に表示。
+const DEFAULT_FOLDER_ID = "fld_default";
 
 function pad(n: number): string {
   return n.toString().padStart(2, "0");
@@ -43,43 +48,42 @@ function formatYmd(iso: string): string {
 }
 
 export default function TemplatesPage() {
-  const [selectedFolderId, setSelectedFolderId] = useState<string>("fld_default");
+  const { currentChannelId } = useAuth();
+  const [selectedFolderId, setSelectedFolderId] = useState<string>(DEFAULT_FOLDER_ID);
   const [query, setQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newFolderId, setNewFolderId] = useState<string>("fld_default");
+  const [newFolderId, setNewFolderId] = useState<string>(DEFAULT_FOLDER_ID);
 
-  useEffect(() => {
-    if (createOpen) {
-      setNewName("");
-      setNewFolderId(selectedFolderId);
-    }
-  }, [createOpen, selectedFolderId]);
+  const openCreate = () => {
+    setNewName("");
+    setNewFolderId(selectedFolderId);
+    setCreateOpen(true);
+  };
+
+  const { data: templates, mutate } = useResource(
+    currentChannelId ? `templates:${currentChannelId}:${query.trim()}` : null,
+    () => fetchTemplates({ q: query.trim() || undefined, sort: "updated_at" }),
+  );
+  const allTemplates = useMemo(() => templates ?? [], [templates]);
 
   const folderCounts = useMemo(() => {
     const map = new Map<string, number>();
-    for (const t of MOCK_TEMPLATES) {
-      map.set(t.folderId, (map.get(t.folderId) ?? 0) + 1);
-    }
+    map.set(DEFAULT_FOLDER_ID, allTemplates.length);
     return map;
-  }, []);
+  }, [allTemplates]);
 
-  const filtered = useMemo(() => {
-    return MOCK_TEMPLATES.filter((t) => {
-      if (t.folderId !== selectedFolderId) return false;
-      if (query.trim()) {
-        const q = query.trim().toLowerCase();
-        if (
-          !t.name.toLowerCase().includes(q) &&
-          !t.preview.toLowerCase().includes(q)
-        ) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [selectedFolderId, query]);
+  // 既定フォルダ選択時のみ一覧を表示（他フォルダは未対応）。検索はサーバ側。
+  const filtered = useMemo(
+    () => (selectedFolderId === DEFAULT_FOLDER_ID ? allTemplates : []),
+    [selectedFolderId, allTemplates],
+  );
+
+  async function handleDelete(id: string) {
+    await deleteTemplate(id);
+    mutate();
+  }
 
   const allCheckedInView =
     filtered.length > 0 && filtered.every((t) => selectedIds.has(t.id));
@@ -167,7 +171,7 @@ export default function TemplatesPage() {
               <Button
                 size="sm"
                 className="h-9 bg-blue-500 hover:bg-blue-600 text-white"
-                onClick={() => setCreateOpen(true)}
+                onClick={openCreate}
               >
                 <FontAwesomeIcon icon={faPlus} className="size-3" />
                 新規作成
@@ -280,6 +284,7 @@ export default function TemplatesPage() {
                               variant="ghost"
                               size="icon-sm"
                               aria-label="削除"
+                              onClick={() => handleDelete(t.id)}
                               className="text-muted-foreground hover:text-destructive"
                             >
                               <FontAwesomeIcon

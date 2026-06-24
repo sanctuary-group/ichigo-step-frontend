@@ -10,6 +10,7 @@ import type {
   MockScenario,
   MockScenarioStep,
   MockTag,
+  MockTemplate,
 } from "@/mocks/data";
 import type {
   ApiBroadcast,
@@ -19,6 +20,7 @@ import type {
   ApiScenario,
   ApiScenarioStep,
   ApiTag,
+  ApiTemplate,
 } from "./types";
 
 const s = (v: number | string): string => String(v);
@@ -107,6 +109,19 @@ export function mapScenarioStep(api: ApiScenarioStep): MockScenarioStep {
     delayMinutes: api.delay_minutes ?? 0,
     messageType: asMessageType(api.message_type),
     preview: api.text_content ?? api.image_url ?? "",
+  };
+}
+
+export function mapTemplate(api: ApiTemplate): MockTemplate {
+  const firstMsg = api.messages?.[0];
+  return {
+    id: s(api.id),
+    name: api.name,
+    folderId: api.template_folder_id != null ? s(api.template_folder_id) : "",
+    messageType: asMessageType(firstMsg?.message_type ?? "text"),
+    preview: api.content ?? firstMsg?.text_content ?? firstMsg?.image_url ?? "",
+    createdAt: api.created_at ?? "",
+    updatedAt: api.updated_at ?? "",
   };
 }
 
