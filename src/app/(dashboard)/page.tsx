@@ -4,27 +4,8 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faAngleRight } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
-
-type Announcement = {
-  date: string;
-  title: string;
-  isNew?: boolean;
-};
-
-const ANNOUNCEMENTS: Announcement[] = [
-  { date: "2026年05月12日", title: "2026年5月アップデート情報", isNew: true },
-  { date: "2026年04月10日", title: "AI連携（MCP接続）に対応しました" },
-  {
-    date: "2026年03月14日",
-    title: "ichigo-step 有料プラン 2月・3月の請求スケジュールについて",
-  },
-  { date: "2026年02月04日", title: "2月アップデート情報" },
-  { date: "2025年11月22日", title: "11月アップデート情報" },
-  {
-    date: "2025年04月27日",
-    title: "【重要】UnivaPay決済連携の追加設定のご案内",
-  },
-];
+import { fetchAnnouncements } from "@/lib/api/announcements";
+import { useResource } from "@/lib/api/use-resource";
 
 type FriendDailyRow = {
   date: string;
@@ -62,6 +43,9 @@ const STATUS_BUCKETS: StatusBucket[] = [
 ];
 
 export default function HomePage() {
+  const { data: announcements } = useResource("announcements", fetchAnnouncements);
+  const announcementList = announcements ?? [];
+
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
       <h1 className="text-xl font-bold tracking-tight">ホーム</h1>
@@ -74,7 +58,7 @@ export default function HomePage() {
             <div>お知らせ内容</div>
           </div>
           <ul className="max-h-56 overflow-y-auto bg-background/40">
-            {ANNOUNCEMENTS.map((a, i) => (
+            {announcementList.map((a, i) => (
               <li
                 key={i}
                 className="grid grid-cols-[110px_1fr] sm:grid-cols-[180px_1fr] px-5 py-2.5 text-sm border-t border-border/60 first:border-t-0"
