@@ -1,6 +1,17 @@
 // リッチメニュー（移植版 RichMenus/Form）の取得・保存・公開を tenant API に橋渡しする。
 import { apiFetch } from "./client";
+import { API_ORIGIN } from "./config";
 import type { RichMenu } from "@/types/rich-menu";
+
+/**
+ * image_path から公開 URL を組み立てる（backend UploadController と同規約）。
+ * Resource は image_url を返さないため、フロント側で image_path から導出する。
+ */
+function deriveImageUrl(imagePath: string | null | undefined): string | null {
+  if (!imagePath) return null;
+  if (/^https?:\/\//.test(imagePath)) return imagePath;
+  return `${API_ORIGIN}/storage/${imagePath.replace(/^\/+/, "")}`;
+}
 
 /** GET /rich-menus */
 export async function fetchRichMenus(): Promise<RichMenu[]> {
@@ -20,7 +31,11 @@ export async function fetchRichMenu(id: number | string): Promise<RichMenu> {
 export async function fetchRawRichMenu(
   id: number | string,
 ): Promise<RichMenu & { image_url?: string | null }> {
-  return apiFetch<RichMenu & { image_url?: string | null }>(`/rich-menus/${id}`);
+  const data = await apiFetch<RichMenu & { image_url?: string | null }>(
+    `/rich-menus/${id}`,
+  );
+  // Resource が image_url を返さない場合は image_path から導出して補完する。
+  return { ...data, image_url: data.image_url ?? deriveImageUrl(data.image_path) };
 }
 
 /**
