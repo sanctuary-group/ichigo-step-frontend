@@ -26,6 +26,17 @@ export async function createAutoReply(input: {
   return mapAutoReply(data);
 }
 
+/** ビルダーフォームの全項目を送る保存（POST/PUT）。 */
+export async function saveAutoReply(
+  payload: Record<string, unknown>,
+  editId?: string,
+): Promise<MockAutoReply> {
+  const data = editId
+    ? await apiFetch<ApiAutoReply>(`/auto-replies/${editId}`, { method: "PUT", body: payload })
+    : await apiFetch<ApiAutoReply>("/auto-replies", { method: "POST", body: payload });
+  return mapAutoReply(data);
+}
+
 /** DELETE /auto-replies/{id} */
 export async function deleteAutoReply(id: string): Promise<void> {
   await apiFetch(`/auto-replies/${id}`, { method: "DELETE" });

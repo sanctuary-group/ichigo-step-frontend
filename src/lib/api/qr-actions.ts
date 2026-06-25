@@ -34,6 +34,18 @@ export async function createQrAction(input: {
   return mapQrAction(data);
 }
 
+/** POST /qr-actions または PUT /qr-actions/{id}（ビルダー保存） */
+export async function saveQrAction(
+  payload: Record<string, unknown>,
+  editId?: number,
+): Promise<ApiQrAction> {
+  const path = editId ? `/qr-actions/${editId}` : "/qr-actions";
+  return apiFetch<ApiQrAction>(path, {
+    method: editId ? "PUT" : "POST",
+    body: payload,
+  });
+}
+
 /** PATCH /qr-actions/{id}/toggle-active */
 export async function toggleQrAction(id: string): Promise<MockQrAction> {
   const data = await apiFetch<ApiQrAction>(`/qr-actions/${id}/toggle-active`, { method: "PATCH" });

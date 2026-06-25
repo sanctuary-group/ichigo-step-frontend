@@ -23,3 +23,24 @@ export async function fetchScenario(id: string): Promise<MockScenario> {
 export async function deleteScenario(id: string): Promise<void> {
   await apiFetch(`/scenarios/${id}`, { method: "DELETE" });
 }
+
+/**
+ * シナリオ作成 / 更新。
+ * 新規: POST /scenarios、編集: PUT /scenarios/{id}。
+ * payload は SaveScenarioRequest に対応した生 shape（steps[] を含む）。
+ */
+export async function saveScenario(
+  payload: Record<string, unknown>,
+  editId?: string,
+): Promise<ApiScenario> {
+  if (editId) {
+    return apiFetch<ApiScenario>(`/scenarios/${editId}`, {
+      method: "PUT",
+      body: payload,
+    });
+  }
+  return apiFetch<ApiScenario>("/scenarios", {
+    method: "POST",
+    body: payload,
+  });
+}

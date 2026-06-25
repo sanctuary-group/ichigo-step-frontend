@@ -50,6 +50,43 @@ export function uploadImage(file: Blob): Promise<string> {
   return uploadFile("/uploads/image", "image", file);
 }
 
+/**
+ * POST /uploads/rich-menu-image
+ * リッチメニュー画像は寸法検証・圧縮込みで { path, url, size } を返す専用エンドポイント。
+ */
+export async function uploadRichMenuImage(
+  file: Blob,
+): Promise<{ path: string; url: string; size: "large" | "compact" }> {
+  const headers = new Headers({ Accept: "application/json" });
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const channelId = getCurrentChannelId();
+  if (channelId) headers.set("X-Line-Channel-Id", channelId);
+
+  const fd = new FormData();
+  fd.append("image", file);
+
+  const res = await fetch(`${API_ORIGIN}${TENANT_BASE}/uploads/rich-menu-image`, {
+    method: "POST",
+    headers,
+    body: fd,
+  });
+
+  if (!res.ok) {
+    let message = `アップロードに失敗しました (HTTP ${res.status})`;
+    try {
+      const data = await res.json();
+      if (data?.error) message = data.error;
+      else if (data?.message) message = data.message;
+    } catch {
+      /* noop */
+    }
+    throw new ApiError(res.status, message);
+  }
+
+  return (await res.json()) as { path: string; url: string; size: "large" | "compact" };
+}
+
 /** POST /uploads/media (kind=video|audio) */
 export function uploadMedia(file: Blob, kind: "video" | "audio"): Promise<string> {
   return uploadFile("/uploads/media", "media", file, { kind });

@@ -1,0 +1,61 @@
+import type { GreetingAction } from "@/types/greeting";
+
+export type QrAudience = "new" | "all";
+export type QrActionType = "none" | "add_tag" | "start_scenario" | "track_source";
+
+export type QrActionFolder = {
+    id: number;
+    name: string;
+    sort_order: number;
+    is_system: boolean;
+    qr_actions_count?: number;
+};
+
+export type QrAction = {
+    id: number;
+    organization_id: number;
+    line_channel_id: number | null;
+    qr_action_folder_id: number | null;
+    token: string;
+    name: string;
+    audience: QrAudience;
+    action_type: QrActionType;
+    action_tag_id: number | null;
+    action_scenario_id: number | null;
+    message: string | null;
+    actions: GreetingAction[] | null;
+    combine_greeting: boolean;
+    off_behavior: "friend_add" | "text" | "redirect";
+    off_text: string | null;
+    off_redirect_url: string | null;
+    off_follow_action: "greeting" | "custom";
+    off_actions: GreetingAction[] | null;
+    referral_code: string | null;
+    referral_referrer_title: string | null;
+    referral_referrer_body: string | null;
+    referral_referee_title: string | null;
+    referral_referee_body: string | null;
+    referral_message: string | null;
+    referral_message_disabled: boolean;
+    referral_actions: GreetingAction[] | null;
+    external_html_enabled: boolean;
+    external_html: string | null;
+    external_html_body: string | null;
+    param_import_enabled: boolean;
+    param_import_map: Record<string, number> | null;
+    param_export_enabled: boolean;
+    param_export_callback_url: string | null;
+    schedule_enabled: boolean;
+    schedule_start_at: string | null;
+    schedule_end_at: string | null;
+    is_active: boolean;
+    scan_count: number;
+    follow_count: number;
+    public_url?: string;
+    image_url?: string;
+    account_name?: string | null;
+    action_tag?: { id: number; name: string; color: string } | null;
+    action_scenario?: { id: number; name: string } | null;
+    created_at: string;
+    updated_at: string;
+};
