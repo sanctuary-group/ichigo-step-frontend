@@ -1,52 +1,98 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faBookmark, faUser } from "@fortawesome/free-solid-svg-icons";
+
 import { cn } from "@/lib/utils";
 import { formatRelativeShort } from "@/lib/time";
-import type { MockFriend } from "@/mocks/data";
+import type { Friend } from "@/types/chat";
+
+function friendDisplayName(friend: Friend): string {
+    return (
+        friend.system_display_name?.trim() ||
+        friend.display_name?.trim() ||
+        "(名前未取得)"
+    );
+}
 
 export function FriendListItem({
-  friend,
-  active,
-  onClick,
+    friend,
+    active,
+    onClick,
 }: {
-  friend: MockFriend;
-  active?: boolean;
-  onClick?: () => void;
+    friend: Friend;
+    active?: boolean;
+    onClick?: () => void;
 }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "w-full text-left flex items-start gap-3 px-3 py-3 border-b border-border/60 transition-colors",
-        active ? "bg-primary/5" : "hover:bg-muted/50"
-      )}
-    >
-      <Avatar className="size-11 shrink-0">
-        <AvatarImage src={friend.pictureUrl} alt={friend.displayName} />
-        <AvatarFallback>{friend.displayName.slice(0, 1)}</AvatarFallback>
-      </Avatar>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <div className="text-sm font-medium truncate flex-1">
-            {friend.displayName}
-          </div>
-          {friend.lastMessageAt && (
-            <div className="text-[11px] text-muted-foreground shrink-0">
-              {formatRelativeShort(friend.lastMessageAt)}
+    const name = friendDisplayName(friend);
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={cn(
+                "w-full text-left flex flex-col gap-1.5 px-3 py-3 border-b border-border/60 transition-colors",
+                active ? "bg-primary/5" : "hover:bg-muted/50",
+            )}
+        >
+            {friend.chat_status && (
+                <span
+                    className="inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                    style={{
+                        color: friend.chat_status.color,
+                        backgroundColor: `${friend.chat_status.color}1a`,
+                    }}
+                >
+                    <span
+                        className="inline-block size-1.5 rounded-full"
+                        style={{ backgroundColor: friend.chat_status.color }}
+                    />
+                    {friend.chat_status.name}
+                </span>
+            )}
+            <div className="flex w-full items-start gap-3">
+                <div className="relative flex shrink-0 items-center justify-center overflow-hidden rounded-full size-11">
+                    {friend.picture_url ? (
+                        <img
+                            src={friend.picture_url}
+                            alt={name}
+                            className="size-full object-cover"
+                            loading="lazy"
+                        />
+                    ) : (
+                        <div className="size-full bg-zinc-400 bg-gradient-to-br from-zinc-300 to-zinc-500 flex items-center justify-center text-white">
+                            <FontAwesomeIcon icon={faUser} className="size-1/2" />
+                        </div>
+                    )}
+                </div>
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                        {friend.pinned_at && (
+                            <FontAwesomeIcon
+                                icon={faBookmark}
+                                className="size-3 text-primary shrink-0"
+                                aria-label="ピン留め中"
+                            />
+                        )}
+                        <div className="text-sm font-medium truncate flex-1">
+                            {name}
+                        </div>
+                        {friend.last_message_at && (
+                            <div className="text-[11px] text-muted-foreground shrink-0">
+                                {formatRelativeShort(friend.last_message_at)}
+                            </div>
+                        )}
+                    </div>
+                    {friend.last_message_preview && (
+                        <div className="text-xs text-muted-foreground truncate mt-0.5">
+                            {friend.last_message_preview}
+                        </div>
+                    )}
+                </div>
+                {friend.unread_count > 0 && (
+                    <span
+                        className="size-2.5 rounded-full bg-destructive shrink-0 mt-2"
+                        aria-label="未読"
+                    />
+                )}
             </div>
-          )}
-        </div>
-        {friend.lastMessagePreview && (
-          <div className="text-xs text-muted-foreground truncate mt-0.5">
-            {friend.lastMessagePreview}
-          </div>
-        )}
-      </div>
-      {friend.unreadCount > 0 && (
-        <span className="grid place-items-center min-w-5 h-5 px-1.5 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold shrink-0 mt-1">
-          {friend.unreadCount}
-        </span>
-      )}
-    </button>
-  );
+        </button>
+    );
 }

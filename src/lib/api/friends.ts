@@ -2,6 +2,7 @@ import { apiFetch, apiFetchPaginated, type Paginated } from "./client";
 import { mapFriend, mapMessage } from "./mappers";
 import type { ApiFriend, ApiMessage } from "./types";
 import type { MockFriend, MockMessage } from "@/mocks/data";
+import type { Friend } from "@/types/chat";
 
 export type FriendListParams = {
   mode?: "active" | "hidden" | "blocked";
@@ -30,6 +31,26 @@ export async function fetchFriends(params: FriendListParams = {}): Promise<Frien
     },
   });
   return { friends: items.map(mapFriend), meta };
+}
+
+/**
+ * GET /friends（一覧ペイン用の生 Friend[]）。
+ * チャット左ペインは Friend 型（数値id・snake_case）を消費するため mapFriend を通さない。
+ */
+export async function fetchFriendsRaw(
+  params: FriendListParams = {},
+): Promise<{ friends: Friend[]; meta: Paginated<Friend>["meta"] }> {
+  const { items, meta } = await apiFetchPaginated<Friend>("/friends", {
+    query: {
+      mode: params.mode,
+      q: params.q,
+      tag: params.tag,
+      sort: params.sort,
+      dir: params.dir,
+      page: params.page,
+    },
+  });
+  return { friends: items, meta };
 }
 
 /** GET /friends/{id} */
