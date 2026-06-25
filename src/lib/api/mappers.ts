@@ -7,6 +7,7 @@ import type {
   MockChannel,
   MockForm,
   MockFriend,
+  MockFriendField,
   MockGreeting,
   MockMessage,
   MockMessageType,
@@ -21,6 +22,7 @@ import type {
   ApiBroadcast,
   ApiForm,
   ApiFriend,
+  ApiFriendField,
   ApiGreeting,
   ApiLineChannel,
   ApiMessage,
@@ -181,6 +183,27 @@ export function mapForm(api: ApiForm): MockForm {
     responseCount: api.responses_count ?? 0,
     createdAt: api.created_at ?? "",
     updatedAt: api.updated_at ?? "",
+  };
+}
+
+const FIELD_TYPE_LABELS: Record<string, string> = {
+  text: "テキスト",
+  textarea: "複数行テキスト",
+  select: "選択式",
+  radio: "ラジオ",
+  checkbox: "チェックボックス",
+  date: "日付",
+  number: "数値",
+};
+
+export function mapFriendField(api: ApiFriendField): MockFriendField {
+  return {
+    id: s(api.id),
+    name: api.name,
+    folderId: api.friend_field_folder_id != null ? s(api.friend_field_folder_id) : "",
+    fieldType: FIELD_TYPE_LABELS[api.field_type] ?? api.field_type,
+    answerCount: api.values_count ?? 0,
+    createdAt: api.created_at ?? "",
   };
 }
 

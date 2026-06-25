@@ -218,6 +218,35 @@ export type ApiGreeting = {
   updated_at: string | null;
 };
 
+export type ApiFriendField = {
+  id: number;
+  friend_field_folder_id: number | null;
+  name: string;
+  field_type: string;
+  options: unknown;
+  run_mode: string | null;
+  sort_order: number | null;
+  show_in_chat_panel: boolean;
+  values_count?: number;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type ApiCsvJob = {
+  id: number;
+  kind: "export" | "import" | string;
+  name: string | null;
+  audience: string | null;
+  target_count: number | null;
+  condition_label: string | null;
+  original_filename: string | null;
+  row_count: number | null;
+  status: string;
+  has_file: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 export type ApiTemplate = {
   id: number;
   template_folder_id: number | null;

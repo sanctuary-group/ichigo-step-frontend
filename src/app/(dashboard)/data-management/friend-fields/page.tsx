@@ -12,28 +12,42 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
-import {
-  MOCK_FRIEND_FIELDS,
-  MOCK_FRIEND_FIELD_FOLDERS,
-} from "@/mocks/data";
+import { MOCK_FRIEND_FIELD_FOLDERS } from "@/mocks/data";
 import { cn } from "@/lib/utils";
+import { fetchFriendFields, deleteFriendField } from "@/lib/api/friend-fields";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
+
+// フォルダ一覧APIが無いため、取得分はすべて既定フォルダ配下に表示。
+const DEFAULT_FOLDER_ID = "fff_default";
 
 export default function FriendFieldsPage() {
-  const [selectedFolderId, setSelectedFolderId] = useState<string>("fff_default");
+  const { currentChannelId } = useAuth();
+  const [selectedFolderId, setSelectedFolderId] = useState<string>(DEFAULT_FOLDER_ID);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const { data: fields, mutate } = useResource(
+    currentChannelId ? `friend-fields:${currentChannelId}` : null,
+    () => fetchFriendFields(),
+  );
+  const allItems = useMemo(() => fields ?? [], [fields]);
 
   const folderCounts = useMemo(() => {
     const map = new Map<string, number>();
-    for (const f of MOCK_FRIEND_FIELDS) {
-      map.set(f.folderId, (map.get(f.folderId) ?? 0) + 1);
-    }
+    map.set(DEFAULT_FOLDER_ID, allItems.length);
     return map;
-  }, []);
+  }, [allItems]);
 
   const filtered = useMemo(
-    () => MOCK_FRIEND_FIELDS.filter((f) => f.folderId === selectedFolderId),
-    [selectedFolderId]
+    () => (selectedFolderId === DEFAULT_FOLDER_ID ? allItems : []),
+    [selectedFolderId, allItems],
   );
+
+  async function handleBulkDelete() {
+    await Promise.all([...selectedIds].map((id) => deleteFriendField(id)));
+    setSelectedIds(new Set());
+    mutate();
+  }
 
   const allCheckedInView =
     filtered.length > 0 && filtered.every((f) => selectedIds.has(f.id));
@@ -145,6 +159,7 @@ export default function FriendFieldsPage() {
               <Button
                 size="sm"
                 disabled={selectionCount === 0}
+                onClick={handleBulkDelete}
                 className="h-9 bg-zinc-400 hover:bg-zinc-500 text-white disabled:opacity-50"
               >
                 <FontAwesomeIcon icon={faTrashCan} className="size-3" />

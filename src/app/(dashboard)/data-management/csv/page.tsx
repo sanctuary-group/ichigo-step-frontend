@@ -16,19 +16,23 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { fetchCsvJobs, deleteCsvJob, type CsvJobRow } from "@/lib/api/csv-jobs";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
 
-type CsvRow = {
-  id: string;
-  createdAt: string;
-  name: string;
-  targetCount: number;
-  conditionLabel: string;
-};
-
-const EXPORT_ROWS: CsvRow[] = [];
-const IMPORT_ROWS: CsvRow[] = [];
+type CsvRow = CsvJobRow;
 
 export default function CsvPage() {
+  const { currentChannelId } = useAuth();
+  const exportJobs = useResource(
+    currentChannelId ? `csv-jobs:${currentChannelId}:export` : null,
+    () => fetchCsvJobs("export"),
+  );
+  const importJobs = useResource(
+    currentChannelId ? `csv-jobs:${currentChannelId}:import` : null,
+    () => fetchCsvJobs("import"),
+  );
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       <div className="px-4 sm:px-6 lg:px-8 pt-5 pb-3 border-b border-border">
@@ -61,14 +65,27 @@ export default function CsvPage() {
           value="export"
           className="flex-1 overflow-hidden flex flex-col"
         >
-          <CsvTable rows={EXPORT_ROWS} newHref="/data-management/csv/new" />
+          <CsvTable
+            rows={exportJobs.data ?? []}
+            newHref="/data-management/csv/new"
+            onDelete={async (ids) => {
+              await Promise.all(ids.map((id) => deleteCsvJob(id)));
+              exportJobs.mutate();
+            }}
+          />
         </TabsContent>
 
         <TabsContent
           value="import"
           className="flex-1 overflow-hidden flex flex-col"
         >
-          <CsvTable rows={IMPORT_ROWS} />
+          <CsvTable
+            rows={importJobs.data ?? []}
+            onDelete={async (ids) => {
+              await Promise.all(ids.map((id) => deleteCsvJob(id)));
+              importJobs.mutate();
+            }}
+          />
         </TabsContent>
       </Tabs>
     </div>
@@ -78,9 +95,11 @@ export default function CsvPage() {
 function CsvTable({
   rows,
   newHref,
+  onDelete,
 }: {
   rows: CsvRow[];
   newHref?: string;
+  onDelete?: (ids: string[]) => void | Promise<void>;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -141,6 +160,10 @@ function CsvTable({
           <Button
             size="sm"
             disabled={selectionCount === 0}
+            onClick={async () => {
+              await onDelete?.([...selectedIds]);
+              setSelectedIds(new Set());
+            }}
             className="h-9 bg-zinc-400 hover:bg-zinc-500 text-white disabled:opacity-50"
           >
             <FontAwesomeIcon icon={faTrashCan} className="size-3" />
