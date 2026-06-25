@@ -24,9 +24,22 @@ import { EmptyState } from "@/components/empty-state";
 import { faComments } from "@fortawesome/free-solid-svg-icons";
 import { type MockFriend } from "@/mocks/data";
 import { useState } from "react";
-import { fetchFriendMessages, sendFriendMessage } from "@/lib/api/friends";
+import {
+  fetchFriendMessages,
+  sendFriendMessage,
+  toggleFriendPin,
+  setFriendChatStatus,
+} from "@/lib/api/friends";
+import { fetchChatStatuses } from "@/lib/api/chat-statuses";
 import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
 import { ApiError } from "@/lib/api/client";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export function ChatThreadPane({
   friend,
@@ -34,17 +47,37 @@ export function ChatThreadPane({
   onBack,
   onShowInfo,
   onSent,
+  onChanged,
 }: {
   friend: MockFriend | undefined;
   mobileVisible?: boolean;
   onBack?: () => void;
   onShowInfo?: () => void;
   onSent?: () => void;
+  onChanged?: () => void;
 }) {
+  const { currentChannelId } = useAuth();
   const { data: messages = [], mutate } = useResource(
     friend ? `messages:${friend.id}` : null,
     () => fetchFriendMessages(friend!.id),
   );
+  const { data: chatStatuses = [] } = useResource(
+    currentChannelId ? `chat-statuses:${currentChannelId}` : null,
+    () => fetchChatStatuses(),
+  );
+  const currentStatus = chatStatuses.find((s) => s.id === friend?.chatStatusId);
+
+  async function handleTogglePin() {
+    if (!friend) return;
+    await toggleFriendPin(friend.id);
+    onChanged?.();
+  }
+
+  async function handleSetStatus(statusId: string | null) {
+    if (!friend) return;
+    await setFriendChatStatus(friend.id, statusId);
+    onChanged?.();
+  }
 
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -106,13 +139,18 @@ export function ChatThreadPane({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="hidden lg:inline-flex text-muted-foreground"
+                onClick={handleTogglePin}
+                className={
+                  friend.pinned
+                    ? "hidden lg:inline-flex text-primary"
+                    : "hidden lg:inline-flex text-muted-foreground"
+                }
               />
             }
           >
             <FontAwesomeIcon icon={faBookmark} className="size-4" />
           </TooltipTrigger>
-          <TooltipContent>ピン留め</TooltipContent>
+          <TooltipContent>{friend.pinned ? "ピン留め解除" : "ピン留め"}</TooltipContent>
         </Tooltip>
         <Avatar className="size-8">
           <AvatarImage src={friend.pictureUrl} />
@@ -150,17 +188,44 @@ export function ChatThreadPane({
           </TooltipTrigger>
           <TooltipContent>関連リンク</TooltipContent>
         </Tooltip>
-        <Button
-          variant="outline"
-          size="sm"
-          className="hidden sm:inline-flex h-8 rounded-full gap-1.5 text-xs"
-        >
-          ステータスなし
-          <FontAwesomeIcon
-            icon={faChevronDown}
-            className="size-2.5 text-muted-foreground"
-          />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                className="hidden sm:inline-flex h-8 rounded-full gap-1.5 text-xs"
+              />
+            }
+          >
+            {currentStatus ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: currentStatus.color }}
+                />
+                {currentStatus.name}
+              </span>
+            ) : (
+              "ステータスなし"
+            )}
+            <FontAwesomeIcon
+              icon={faChevronDown}
+              className="size-2.5 text-muted-foreground"
+            />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem onClick={() => handleSetStatus(null)}>
+              ステータスなし
+            </DropdownMenuItem>
+            {chatStatuses.map((s) => (
+              <DropdownMenuItem key={s.id} onClick={() => handleSetStatus(s.id)} className="gap-2">
+                <span className="size-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                {s.name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Tooltip>
           <TooltipTrigger
             render={

@@ -37,6 +37,7 @@ export default function ChatPage() {
         onBack={() => setView("list")}
         onShowInfo={() => setView("info")}
         onSent={refreshFriend}
+        onChanged={refreshFriend}
       />
       {friend && (
         <RightInfoPanel

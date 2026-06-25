@@ -45,6 +45,8 @@ export type MockFriend = {
   unreadCount: number;
   scenarioId?: string;
   scenarioStepLabel?: string;
+  chatStatusId?: string;
+  pinned?: boolean;
 };
 
 export type MockMessageType = "text" | "image" | "flex" | "sticker";

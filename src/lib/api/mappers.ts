@@ -73,6 +73,8 @@ export function mapFriend(api: ApiFriend): MockFriend {
     lastMessagePreview: api.last_message_preview ?? undefined,
     lastMessageAt: api.last_message_at ?? undefined,
     unreadCount: api.unread_count ?? 0,
+    chatStatusId: api.chat_status_id != null ? s(api.chat_status_id) : undefined,
+    pinned: api.pinned_at != null,
   };
 }
 

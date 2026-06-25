@@ -23,9 +23,14 @@ import { Button } from "@/components/ui/button";
 import { TagBadge } from "@/components/tag-badge";
 import { type MockFriend } from "@/mocks/data";
 import { formatDateTime } from "@/lib/time";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { useState } from "react";
 import { fetchTags } from "@/lib/api/tags";
 import { attachFriendTag, detachFriendTag } from "@/lib/api/friends";
+import { fetchMemos, createMemo, deleteMemo } from "@/lib/api/memos";
+import { fetchFriendFields } from "@/lib/api/friend-fields";
+import { fetchFieldValues, updateFieldValues } from "@/lib/api/field-values";
 import { useResource } from "@/lib/api/use-resource";
 import { useAuth } from "@/lib/auth/auth-context";
 
@@ -49,6 +54,60 @@ export function RightInfoPanel({
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [busyTagId, setBusyTagId] = useState<string | null>(null);
   const assignable = (allTags ?? []).filter((t) => !friend.tagIds.includes(t.id));
+
+  // メモ
+  const { data: memos, mutate: refreshMemos } = useResource(
+    `memos:${friend.id}`,
+    () => fetchMemos(friend.id),
+  );
+  const [memoDraft, setMemoDraft] = useState("");
+  const [savingMemo, setSavingMemo] = useState(false);
+
+  async function handleAddMemo() {
+    const body = memoDraft.trim();
+    if (!body || savingMemo) return;
+    setSavingMemo(true);
+    try {
+      await createMemo(friend.id, { body });
+      setMemoDraft("");
+      refreshMemos();
+    } finally {
+      setSavingMemo(false);
+    }
+  }
+
+  async function handleDeleteMemo(memoId: string) {
+    await deleteMemo(friend.id, memoId);
+    refreshMemos();
+  }
+
+  // 友だち情報項目（カスタムフィールド）
+  const { data: fieldDefs } = useResource(
+    currentChannelId ? `friend-fields:${currentChannelId}` : null,
+    () => fetchFriendFields(),
+  );
+  const { data: fieldValues, mutate: refreshValues } = useResource(
+    `field-values:${friend.id}`,
+    () => fetchFieldValues(friend.id),
+  );
+  const [valueDraft, setValueDraft] = useState<Record<string, string> | null>(null);
+  const values = valueDraft ?? fieldValues ?? {};
+  const [savingValues, setSavingValues] = useState(false);
+
+  function setFieldValue(fieldId: string, v: string) {
+    setValueDraft({ ...values, [fieldId]: v });
+  }
+
+  async function handleSaveValues() {
+    setSavingValues(true);
+    try {
+      await updateFieldValues(friend.id, values);
+      setValueDraft(null);
+      refreshValues();
+    } finally {
+      setSavingValues(false);
+    }
+  }
 
   async function toggleTag(tagId: string, attached: boolean) {
     setBusyTagId(tagId);
@@ -147,6 +206,32 @@ export function RightInfoPanel({
                 Uxxxx...{friend.id}
               </div>
             </InfoRow>
+
+            {(fieldDefs ?? []).length > 0 && (
+              <div className="space-y-3 pt-2 border-t border-border">
+                <SectionTitle>友だち情報項目</SectionTitle>
+                {(fieldDefs ?? []).map((f) => (
+                  <div key={f.id} className="space-y-1">
+                    <div className="text-[11px] font-medium text-muted-foreground">
+                      {f.name}
+                    </div>
+                    <Input
+                      value={values[f.id] ?? ""}
+                      onChange={(e) => setFieldValue(f.id, e.target.value)}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                ))}
+                <Button
+                  size="sm"
+                  className="w-full"
+                  onClick={handleSaveValues}
+                  disabled={savingValues || valueDraft === null}
+                >
+                  {savingValues ? "保存中…" : "友だち情報を保存"}
+                </Button>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="tags" className="space-y-3">
@@ -205,9 +290,47 @@ export function RightInfoPanel({
 
           <TabsContent value="memo" className="space-y-3">
             <SectionTitle>メモ</SectionTitle>
-            <div className="text-xs text-muted-foreground italic">
-              メモはまだありません
+            <div className="space-y-2">
+              {(memos ?? []).length === 0 ? (
+                <div className="text-xs text-muted-foreground italic">
+                  メモはまだありません
+                </div>
+              ) : (
+                (memos ?? []).map((m) => (
+                  <div
+                    key={m.id}
+                    className="rounded-md border border-border p-2 text-sm flex items-start gap-2"
+                  >
+                    <div className="flex-1 min-w-0 whitespace-pre-wrap break-words">
+                      {m.title && <div className="font-medium">{m.title}</div>}
+                      <div>{m.body}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteMemo(m.id)}
+                      className="text-muted-foreground hover:text-destructive text-xs shrink-0"
+                      aria-label="メモを削除"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
+            <Textarea
+              rows={3}
+              value={memoDraft}
+              onChange={(e) => setMemoDraft(e.target.value)}
+              placeholder="メモを入力"
+            />
+            <Button
+              size="sm"
+              className="w-full"
+              onClick={handleAddMemo}
+              disabled={savingMemo || memoDraft.trim().length === 0}
+            >
+              {savingMemo ? "追加中…" : "メモを追加"}
+            </Button>
           </TabsContent>
         </div>
       </Tabs>
