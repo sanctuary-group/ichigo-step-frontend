@@ -16,34 +16,45 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MOCK_FORMS, MOCK_FORM_FOLDERS } from "@/mocks/data";
+import { MOCK_FORM_FOLDERS } from "@/mocks/data";
 import { cn } from "@/lib/utils";
+import { fetchForms, bulkDeleteForms } from "@/lib/api/forms";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
+
+// フォルダ一覧APIが無いため、取得分はすべて既定フォルダ配下に表示。
+const DEFAULT_FOLDER_ID = "fmf_default";
 
 export default function FormsPage() {
-  const [selectedFolderId, setSelectedFolderId] = useState<string>("fmf_default");
+  const { currentChannelId } = useAuth();
+  const [selectedFolderId, setSelectedFolderId] = useState<string>(DEFAULT_FOLDER_ID);
   const [query, setQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [folderVisible, setFolderVisible] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
 
+  const { data: forms, mutate } = useResource(
+    currentChannelId ? `forms:${currentChannelId}:${query.trim()}` : null,
+    () => fetchForms({ q: query.trim() || undefined }),
+  );
+  const allItems = useMemo(() => forms ?? [], [forms]);
+
   const folderCounts = useMemo(() => {
     const map = new Map<string, number>();
-    for (const f of MOCK_FORMS) {
-      map.set(f.folderId, (map.get(f.folderId) ?? 0) + 1);
-    }
+    map.set(DEFAULT_FOLDER_ID, allItems.length);
     return map;
-  }, []);
+  }, [allItems]);
 
-  const filtered = useMemo(() => {
-    return MOCK_FORMS.filter((f) => {
-      if (f.folderId !== selectedFolderId) return false;
-      if (query.trim()) {
-        const q = query.trim().toLowerCase();
-        if (!f.name.toLowerCase().includes(q)) return false;
-      }
-      return true;
-    });
-  }, [selectedFolderId, query]);
+  const filtered = useMemo(
+    () => (selectedFolderId === DEFAULT_FOLDER_ID ? allItems : []),
+    [selectedFolderId, allItems],
+  );
+
+  async function handleBulkDelete() {
+    await bulkDeleteForms([...selectedIds]);
+    setSelectedIds(new Set());
+    mutate();
+  }
 
   const allCheckedInView =
     filtered.length > 0 && filtered.every((f) => selectedIds.has(f.id));
@@ -299,6 +310,7 @@ export default function FormsPage() {
               variant="outline"
               size="sm"
               disabled={selectionCount === 0}
+              onClick={handleBulkDelete}
               className="h-9 disabled:opacity-50"
             >
               <FontAwesomeIcon icon={faTrashCan} className="size-3.5" />

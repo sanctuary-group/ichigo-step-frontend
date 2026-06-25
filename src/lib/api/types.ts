@@ -149,6 +149,75 @@ export type ApiScenario = {
   updated_at: string | null;
 };
 
+export type ApiAutoReply = {
+  id: number;
+  auto_reply_folder_id: number | null;
+  trigger_type: string;
+  match_mode: string | null;
+  keywords: string[] | null;
+  audience: string | null;
+  schedule_type: string | null;
+  schedule_start: string | null;
+  schedule_end: string | null;
+  action_mode: string | null;
+  message_type: string;
+  text_content: string | null;
+  is_active: boolean;
+  hit_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type ApiQrAction = {
+  id: number;
+  line_channel_id: number;
+  qr_action_folder_id: number | null;
+  token: string | null;
+  name: string;
+  audience: string | null;
+  action_type: string | null;
+  action_tag_id: number | null;
+  action_scenario_id: number | null;
+  message: string | null;
+  is_active: boolean;
+  scan_count: number;
+  follow_count: number;
+  action_tag?: ApiTag;
+  action_scenario?: ApiScenario;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type ApiForm = {
+  id: number;
+  line_channel_id: number;
+  form_folder_id: number | null;
+  token: string | null;
+  name: string;
+  title: string | null;
+  description: string | null;
+  form_type: string | null;
+  status: string;
+  fields_count?: number;
+  responses_count?: number;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type ApiGreeting = {
+  id: number;
+  line_channel_id: number;
+  type: string;
+  is_active: boolean;
+  message_type: string;
+  text_content: string | null;
+  image_url: string | null;
+  image_preview_url: string | null;
+  actions: unknown;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 export type ApiTemplate = {
   id: number;
   template_folder_id: number | null;

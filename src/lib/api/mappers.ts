@@ -2,26 +2,35 @@
 // UI コンポーネントを一切変えずに実データを流すためのアダプタ層。
 
 import type {
+  MockAutoReply,
   MockBroadcast,
   MockChannel,
+  MockForm,
   MockFriend,
+  MockGreeting,
   MockMessage,
   MockMessageType,
+  MockQrAction,
   MockScenario,
   MockScenarioStep,
   MockTag,
   MockTemplate,
 } from "@/mocks/data";
 import type {
+  ApiAutoReply,
   ApiBroadcast,
+  ApiForm,
   ApiFriend,
+  ApiGreeting,
   ApiLineChannel,
   ApiMessage,
+  ApiQrAction,
   ApiScenario,
   ApiScenarioStep,
   ApiTag,
   ApiTemplate,
 } from "./types";
+import { API_ORIGIN } from "./config";
 
 const s = (v: number | string): string => String(v);
 
@@ -110,6 +119,76 @@ export function mapScenarioStep(api: ApiScenarioStep): MockScenarioStep {
     delayMinutes: api.delay_minutes ?? 0,
     messageType: asMessageType(api.message_type),
     preview: api.text_content ?? api.image_url ?? "",
+  };
+}
+
+export function mapAutoReply(api: ApiAutoReply): MockAutoReply {
+  const triggerType: MockAutoReply["triggerType"] =
+    api.trigger_type === "follow" || api.trigger_type === "default"
+      ? api.trigger_type
+      : "keyword";
+  const schedule =
+    !api.schedule_type || api.schedule_type === "always" ? "24時間対応" : "期間指定";
+  return {
+    id: s(api.id),
+    folderId: api.auto_reply_folder_id != null ? s(api.auto_reply_folder_id) : "",
+    triggerType,
+    keyword: (api.keywords ?? []).join("、"),
+    schedule,
+    replyPreview: api.text_content ?? "",
+    hitCount: api.hit_count ?? 0,
+    isActive: api.is_active,
+    createdAt: api.created_at ?? "",
+  };
+}
+
+export function mapQrAction(api: ApiQrAction): MockQrAction {
+  const action: MockQrAction["action"] = api.action_scenario_id
+    ? "start_scenario"
+    : api.action_tag_id
+      ? "add_tag"
+      : "track_source";
+  const actionLabel =
+    api.action_tag?.name ?? api.action_scenario?.name ?? (api.message ? "メッセージ" : "—");
+  return {
+    id: s(api.id),
+    name: api.name,
+    folderId: api.qr_action_folder_id != null ? s(api.qr_action_folder_id) : "",
+    isActive: api.is_active,
+    audience: api.audience ?? "",
+    action,
+    actionLabel,
+    scanCount: api.scan_count ?? 0,
+    followCount: api.follow_count ?? 0,
+    createdAt: api.created_at ?? "",
+  };
+}
+
+export function mapForm(api: ApiForm): MockForm {
+  const formType: MockForm["formType"] =
+    api.form_type === "reservation" ? "予約" : api.form_type === "survey" ? "アンケート" : "標準";
+  const status: MockForm["status"] = ["draft", "published", "closed"].includes(api.status)
+    ? (api.status as MockForm["status"])
+    : "draft";
+  return {
+    id: s(api.id),
+    name: api.name,
+    folderId: api.form_folder_id != null ? s(api.form_folder_id) : "",
+    formType,
+    distributionUrl: api.token ? `${API_ORIGIN}/f/${api.token}` : "",
+    status,
+    questionCount: api.fields_count ?? 0,
+    responseCount: api.responses_count ?? 0,
+    createdAt: api.created_at ?? "",
+    updatedAt: api.updated_at ?? "",
+  };
+}
+
+export function mapGreeting(api: ApiGreeting): MockGreeting {
+  return {
+    isActive: api.is_active,
+    messageType: asMessageType(api.message_type),
+    content: api.text_content ?? "",
   };
 }
 

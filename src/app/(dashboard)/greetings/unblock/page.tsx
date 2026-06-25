@@ -23,6 +23,9 @@ import {
 } from "@/components/ui/tabs";
 import { ActionEditDialog } from "@/components/action-edit-dialog";
 import { FriendAddUrlCard } from "@/components/friend-add-url-card";
+import { fetchGreeting, saveGreeting } from "@/lib/api/greetings";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
 
 const MAX_LEN = 5000;
 
@@ -34,8 +37,36 @@ const TEST_STEPS: string[] = [
 ];
 
 export default function UnblockGreetingsPage() {
-  const [content, setContent] = useState("");
+  const { currentChannelId } = useAuth();
+  const { data: greeting } = useResource(
+    currentChannelId ? `greeting:${currentChannelId}:unblock` : null,
+    () => fetchGreeting("unblock"),
+  );
+  const [draft, setDraft] = useState<string | null>(null);
+  const content = draft ?? greeting?.content ?? "";
   const [actionOpen, setActionOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const setContent = (v: string) => {
+    setDraft(v);
+    setSaved(false);
+  };
+
+  async function handleSave() {
+    setSaving(true);
+    setSaved(false);
+    try {
+      await saveGreeting("unblock", {
+        is_active: greeting?.isActive ?? true,
+        message_type: "text",
+        text_content: content,
+      });
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-4">
@@ -191,9 +222,11 @@ export default function UnblockGreetingsPage() {
           <div>
             <Button
               variant="outline"
+              onClick={handleSave}
+              disabled={saving}
               className="border-primary text-primary hover:bg-primary/10 hover:text-primary px-10 h-10"
             >
-              保存
+              {saving ? "保存中…" : saved ? "保存しました" : "保存"}
             </Button>
           </div>
         </TabsContent>
@@ -254,9 +287,11 @@ export default function UnblockGreetingsPage() {
           <div>
             <Button
               variant="outline"
+              onClick={handleSave}
+              disabled={saving}
               className="border-primary text-primary hover:bg-primary/10 hover:text-primary px-10 h-10"
             >
-              保存
+              {saving ? "保存中…" : saved ? "保存しました" : "保存"}
             </Button>
           </div>
         </TabsContent>

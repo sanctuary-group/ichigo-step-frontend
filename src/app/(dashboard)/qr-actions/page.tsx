@@ -29,15 +29,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MOCK_QR_ACTIONS, MOCK_QR_ACTION_FOLDERS } from "@/mocks/data";
+import { MOCK_QR_ACTION_FOLDERS } from "@/mocks/data";
 import { cn } from "@/lib/utils";
+import { fetchQrActions, bulkDeleteQrActions } from "@/lib/api/qr-actions";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
 
 const MAX_NAME = 50;
 type Audience = "new" | "all";
+// フォルダ一覧APIが無いため、取得分はすべて既定フォルダ配下に表示。
+const DEFAULT_FOLDER_ID = "qrf_default";
 
 export default function QrActionsPage() {
   const router = useRouter();
-  const [selectedFolderId, setSelectedFolderId] = useState<string>("qrf_default");
+  const { currentChannelId } = useAuth();
+  const [selectedFolderId, setSelectedFolderId] = useState<string>(DEFAULT_FOLDER_ID);
   const [query, setQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [folderVisible, setFolderVisible] = useState(true);
@@ -46,27 +52,35 @@ export default function QrActionsPage() {
   const [viewFilter, setViewFilter] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newFolderId, setNewFolderId] = useState<string>("qrf_default");
+  const [newFolderId, setNewFolderId] = useState<string>(DEFAULT_FOLDER_ID);
   const [audience, setAudience] = useState<Audience>("new");
+
+  const { data: qrActions, mutate } = useResource(
+    currentChannelId ? `qr-actions:${currentChannelId}:${query.trim()}` : null,
+    () => fetchQrActions({ q: query.trim() || undefined }),
+  );
+  const allItems = useMemo(() => qrActions ?? [], [qrActions]);
 
   const folderCounts = useMemo(() => {
     const map = new Map<string, number>();
-    for (const q of MOCK_QR_ACTIONS) {
-      map.set(q.folderId, (map.get(q.folderId) ?? 0) + 1);
-    }
+    map.set(DEFAULT_FOLDER_ID, allItems.length);
     return map;
-  }, []);
+  }, [allItems]);
 
   const filtered = useMemo(() => {
-    return MOCK_QR_ACTIONS.filter((q) => {
-      if (q.folderId !== selectedFolderId) return false;
-      if (query.trim()) {
-        const s = query.trim().toLowerCase();
-        if (!q.name.toLowerCase().includes(s)) return false;
-      }
+    if (selectedFolderId !== DEFAULT_FOLDER_ID) return [];
+    return allItems.filter((q) => {
+      if (viewFilter === "active" && !q.isActive) return false;
+      if (viewFilter === "paused" && q.isActive) return false;
       return true;
     });
-  }, [selectedFolderId, query]);
+  }, [selectedFolderId, allItems, viewFilter]);
+
+  async function handleBulkDelete() {
+    await bulkDeleteQrActions([...selectedIds]);
+    setSelectedIds(new Set());
+    mutate();
+  }
 
   const allCheckedInView =
     filtered.length > 0 && filtered.every((q) => selectedIds.has(q.id));
@@ -346,6 +360,7 @@ export default function QrActionsPage() {
                 variant="outline"
                 size="sm"
                 disabled={selectionCount === 0}
+                onClick={handleBulkDelete}
                 className="h-9 disabled:opacity-50"
               >
                 <FontAwesomeIcon icon={faTrashCan} className="size-3.5" />
