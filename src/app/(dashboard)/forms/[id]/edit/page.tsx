@@ -1,29 +1,39 @@
 "use client";
 
+import { useParams } from "next/navigation";
+
 import { apiFetch } from "@/lib/api/client";
 import { useResource } from "@/lib/api/use-resource";
 import { fetchFolders } from "@/lib/api/folders";
+import { fetchRawForm } from "@/lib/api/forms";
 import type { FriendFieldOption, ScenarioOption } from "@/types/form";
 import {
     FormEditor,
     type FolderOption,
     type SharedChannel,
     type SharedTag,
-} from "../builder-form";
+} from "../../builder-form";
 
-// ── データ取得ラッパー（Inertia の server props を API 取得に置換） ──
-export default function NewFormPage() {
-    const { data, isLoading, error } = useResource("form-builder:new", async () => {
-        const [channels, tags, folders, friendFields, scenarios] =
-            await Promise.all([
-                apiFetch<SharedChannel[]>("/channels"),
-                apiFetch<SharedTag[]>("/tags"),
-                fetchFolders("form-folders"),
-                apiFetch<FriendFieldOption[]>("/friend-fields"),
-                apiFetch<ScenarioOption[]>("/scenarios"),
-            ]);
-        return { channels, tags, folders, friendFields, scenarios };
-    });
+// ── 編集ルート：fetchRawForm + options ローダーで FormEditor に model を渡す ──
+export default function EditFormPage() {
+    const params = useParams<{ id: string }>();
+    const id = String(params.id);
+
+    const { data, isLoading, error } = useResource(
+        `form-builder:edit:${id}`,
+        async () => {
+            const [record, channels, tags, folders, friendFields, scenarios] =
+                await Promise.all([
+                    fetchRawForm(id),
+                    apiFetch<SharedChannel[]>("/channels"),
+                    apiFetch<SharedTag[]>("/tags"),
+                    fetchFolders("form-folders"),
+                    apiFetch<FriendFieldOption[]>("/friend-fields"),
+                    apiFetch<ScenarioOption[]>("/scenarios"),
+                ]);
+            return { record, channels, tags, folders, friendFields, scenarios };
+        },
+    );
 
     if (isLoading || !data) {
         return (
@@ -43,7 +53,7 @@ export default function NewFormPage() {
 
     return (
         <FormEditor
-            form={null}
+            form={data.record}
             folders={folderOptions}
             friendFields={data.friendFields}
             scenarios={data.scenarios}

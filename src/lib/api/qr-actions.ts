@@ -2,6 +2,15 @@ import { apiFetch } from "./client";
 import { mapQrAction } from "./mappers";
 import type { ApiQrAction } from "./types";
 import type { MockQrAction } from "@/mocks/data";
+import type { QrAction } from "@/types/qr-action";
+
+/** ビルダー編集フォームが期待する raw な QrAction（snake_case + public_url / image_url） */
+export type RawQrAction = QrAction & { public_url?: string; image_url?: string };
+
+/** GET /qr-actions/{id} （編集フォーム用に raw な snake_case 形状を返す） */
+export async function fetchRawQrAction(id: number | string): Promise<RawQrAction> {
+  return apiFetch<RawQrAction>(`/qr-actions/${id}`);
+}
 
 /** GET /qr-actions */
 export async function fetchQrActions(params: { folder?: string; q?: string } = {}): Promise<

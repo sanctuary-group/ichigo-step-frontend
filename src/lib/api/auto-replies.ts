@@ -2,6 +2,12 @@ import { apiFetch } from "./client";
 import { mapAutoReply } from "./mappers";
 import type { ApiAutoReply } from "./types";
 import type { MockAutoReply } from "@/mocks/data";
+import type { AutoReply } from "@/types/auto-reply";
+
+/** GET /auto-replies/{id} — 編集フォーム初期化用の生レコード（{data} unwrap 済）。 */
+export async function fetchRawAutoReply(id: string): Promise<AutoReply> {
+  return apiFetch<AutoReply>(`/auto-replies/${id}`);
+}
 
 /** GET /auto-replies */
 export async function fetchAutoReplies(params: { folder?: string } = {}): Promise<MockAutoReply[]> {

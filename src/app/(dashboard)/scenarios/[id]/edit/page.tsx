@@ -1,8 +1,8 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 
-import { ScenariosFormInner } from "../builder-form";
+import { ScenariosFormInner } from "../../builder-form";
 import { useResource } from "@/lib/api/use-resource";
 import { useAuth } from "@/lib/auth/auth-context";
 import {
@@ -17,19 +17,21 @@ import {
     fetchQuoteSources,
     fetchDefaultScenarioFolderId,
 } from "@/lib/api/scenario-form-data";
+import { fetchRawScenario } from "@/lib/api/scenarios";
 
-// ── データ取得ラッパー（Inertia の server props を API 取得に置換） ──
-export default function NewScenarioPage() {
+// ── 編集ルート: 既存シナリオ + フォーム用 options を取得して Inner に渡す ──
+export default function EditScenarioPage() {
     const { currentChannelId } = useAuth();
-    const searchParams = useSearchParams();
-    const folderParam = searchParams.get("folder");
+    const params = useParams<{ id: string }>();
+    const id = params?.id;
 
     const { data, error } = useResource(
-        currentChannelId
-            ? `scenario-form:${currentChannelId}:new`
+        currentChannelId && id
+            ? `scenario-form:${currentChannelId}:edit:${id}`
             : null,
         async () => {
             const [
+                scenario,
                 channels,
                 tags,
                 chatStatuses,
@@ -39,6 +41,7 @@ export default function NewScenarioPage() {
                 quoteSources,
                 defaultFolderId,
             ] = await Promise.all([
+                fetchRawScenario(String(id)),
                 fetchFormChannels(),
                 fetchFormTags(),
                 fetchFormChatStatuses(),
@@ -49,6 +52,7 @@ export default function NewScenarioPage() {
                 fetchDefaultScenarioFolderId(),
             ]);
             return {
+                scenario,
                 channels,
                 tags,
                 chatStatuses,
@@ -56,9 +60,7 @@ export default function NewScenarioPage() {
                 templates,
                 templateFolders,
                 quoteSources,
-                defaultFolderId: folderParam
-                    ? Number(folderParam)
-                    : defaultFolderId,
+                defaultFolderId,
             };
         },
     );
@@ -80,7 +82,7 @@ export default function NewScenarioPage() {
 
     return (
         <ScenariosFormInner
-            scenario={null}
+            scenario={data.scenario}
             defaultFolderId={data.defaultFolderId}
             friendFieldFolders={data.friendFieldFolders}
             templates={data.templates}

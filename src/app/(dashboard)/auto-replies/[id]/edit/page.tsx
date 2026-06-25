@@ -1,5 +1,7 @@
 "use client";
 
+import { useParams } from "next/navigation";
+
 import { useResource } from "@/lib/api/use-resource";
 import { fetchFolders } from "@/lib/api/folders";
 import {
@@ -7,21 +9,29 @@ import {
     fetchTags,
     fetchChatStatuses,
 } from "@/lib/api/builder-options";
+import { fetchRawAutoReply } from "@/lib/api/auto-replies";
 import {
     AutoReplyFormInner,
     type FolderOption,
-} from "../builder-form";
+} from "../../builder-form";
 
-export default function NewAutoReplyPage() {
-    const { data, isLoading, error } = useResource("auto-reply-form", async () => {
-        const [folders, options, tags, chatStatuses] = await Promise.all([
-            fetchFolders("auto-reply-folders"),
-            fetchBuilderOptions(),
-            fetchTags(),
-            fetchChatStatuses(),
-        ]);
-        return { folders, options, tags, chatStatuses };
-    });
+export default function EditAutoReplyPage() {
+    const params = useParams();
+    const id = String(params.id);
+
+    const { data, isLoading, error } = useResource(
+        `auto-reply-form-edit-${id}`,
+        async () => {
+            const [record, folders, options, tags, chatStatuses] = await Promise.all([
+                fetchRawAutoReply(id),
+                fetchFolders("auto-reply-folders"),
+                fetchBuilderOptions(),
+                fetchTags(),
+                fetchChatStatuses(),
+            ]);
+            return { record, folders, options, tags, chatStatuses };
+        },
+    );
 
     if (isLoading || !data) {
         return (
@@ -41,7 +51,8 @@ export default function NewAutoReplyPage() {
 
     return (
         <AutoReplyFormInner
-            autoReply={null}
+            autoReply={data.record}
+            editId={id}
             folders={folderOptions}
             defaultFolderId={defaultFolderId}
             options={data.options}

@@ -1,24 +1,34 @@
 "use client";
 
+import { useParams } from "next/navigation";
+
 import { useResource } from "@/lib/api/use-resource";
 import { fetchFolders } from "@/lib/api/folders";
+import { fetchRawQrAction } from "@/lib/api/qr-actions";
 import {
     fetchBuilderOptions,
     fetchTags,
     fetchChatStatuses,
 } from "@/lib/api/builder-options";
-import { QrActionForm, type FolderOption } from "../builder-form";
+import { QrActionForm, type FolderOption } from "../../builder-form";
 
-export default function NewQrActionPage() {
-    const { data, isLoading, error } = useResource("qr-action-form", async () => {
-        const [folders, options, tags, chatStatuses] = await Promise.all([
-            fetchFolders("qr-action-folders"),
-            fetchBuilderOptions(),
-            fetchTags(),
-            fetchChatStatuses(),
-        ]);
-        return { folders, options, tags, chatStatuses };
-    });
+export default function EditQrActionPage() {
+    const params = useParams<{ id: string }>();
+    const id = params.id;
+
+    const { data, isLoading, error } = useResource(
+        `qr-action-form:${id}`,
+        async () => {
+            const [record, folders, options, tags, chatStatuses] = await Promise.all([
+                fetchRawQrAction(id),
+                fetchFolders("qr-action-folders"),
+                fetchBuilderOptions(),
+                fetchTags(),
+                fetchChatStatuses(),
+            ]);
+            return { record, folders, options, tags, chatStatuses };
+        },
+    );
 
     if (isLoading || !data) {
         return (
@@ -38,7 +48,7 @@ export default function NewQrActionPage() {
 
     return (
         <QrActionForm
-            qrAction={null}
+            qrAction={data.record}
             folders={folderOptions}
             options={data.options}
             tags={data.tags}

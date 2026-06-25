@@ -1,8 +1,11 @@
 "use client";
 
+import { useParams } from "next/navigation";
+
 import { apiFetch } from "@/lib/api/client";
 import { useResource } from "@/lib/api/use-resource";
 import { useAuth } from "@/lib/auth/auth-context";
+import { fetchRawRichMenu } from "@/lib/api/rich-menus";
 import {
     RICH_MENU_LAYOUTS,
     fetchRichMenuFolderOptions,
@@ -11,22 +14,28 @@ import {
     fetchRichMenuActionOptions,
 } from "@/lib/api/rich-menu-form-data";
 import type { LineChannel } from "@/types/broadcast";
-import { RichMenuForm } from "../builder-form";
+import { RichMenuForm } from "../../builder-form";
 
-// ── データ取得ラッパー（Inertia の server props を API 取得に置換） ──
-export default function NewRichMenuPage() {
+// ── 編集ルート: 対象リッチメニュー + 各種 options を取得して共有ビルダーへ ──
+export default function EditRichMenuPage() {
     const { currentChannelId } = useAuth();
+    const params = useParams<{ id: string }>();
+    const id = params?.id;
 
     const { data, error } = useResource(
-        currentChannelId ? `rich-menu-form:${currentChannelId}:new` : null,
+        currentChannelId && id
+            ? `rich-menu-form:${currentChannelId}:edit:${id}`
+            : null,
         async () => {
             const [
+                richMenu,
                 channels,
                 folders,
                 actionTemplates,
                 actionTemplateFolders,
                 actionOptions,
             ] = await Promise.all([
+                fetchRawRichMenu(id!),
                 apiFetch<LineChannel[]>("/channels"),
                 fetchRichMenuFolderOptions(),
                 fetchActionTemplates(),
@@ -34,6 +43,7 @@ export default function NewRichMenuPage() {
                 fetchRichMenuActionOptions(),
             ]);
             return {
+                richMenu,
                 channels,
                 folders,
                 actionTemplates,
@@ -60,7 +70,7 @@ export default function NewRichMenuPage() {
 
     return (
         <RichMenuForm
-            richMenu={null}
+            richMenu={data.richMenu}
             layouts={RICH_MENU_LAYOUTS}
             folders={data.folders}
             actionTemplates={data.actionTemplates}
