@@ -112,10 +112,6 @@ export function SidebarContent({
           </div>
         ))}
       </nav>
-
-      <div className="border-t border-sidebar-border px-4 py-3 text-[10px] text-muted-foreground">
-        v0.1.0 Mockup
-      </div>
     </>
   );
 }
