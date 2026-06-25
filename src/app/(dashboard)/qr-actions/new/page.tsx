@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faChevronRight,
@@ -34,8 +35,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ActionEditDialog } from "@/components/action-edit-dialog";
-import { MOCK_QR_ACTION_FOLDERS } from "@/mocks/data";
 import { cn } from "@/lib/utils";
+import { fetchFolders } from "@/lib/api/folders";
+import { createQrAction } from "@/lib/api/qr-actions";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
+import { ApiError } from "@/lib/api/client";
 
 const MAX_NAME = 50;
 const MAX_CONTENT = 5000;
@@ -54,12 +59,43 @@ const SETTINGS: { id: SettingId; label: string }[] = [
 ];
 
 export default function NewQrActionPage() {
-  const [name, setName] = useState("テスト");
-  const [folderId, setFolderId] = useState<string>("qrf_default");
+  const router = useRouter();
+  const { currentChannelId } = useAuth();
+  const { data: folders } = useResource(
+    currentChannelId ? "qr-action-folders" : null,
+    () => fetchFolders("qr-action-folders"),
+  );
+  const folderList = folders ?? [];
+
+  const [name, setName] = useState("");
+  const [folderId, setFolderId] = useState<string>("");
   const [setting, setSetting] = useState<SettingId>("read");
   const [content, setContent] = useState("");
   const [combineGreeting, setCombineGreeting] = useState<string>("combine");
   const [actionOpen, setActionOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const effectiveFolderId = folderId || folderList[0]?.id || "";
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      await createQrAction({
+        name: name.trim(),
+        qr_action_folder_id: Number(effectiveFolderId),
+        audience: "new",
+        message: content || undefined,
+        combine_greeting: combineGreeting === "combine",
+        action_type: "none",
+      });
+      router.push("/qr-actions");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "保存に失敗しました");
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -108,14 +144,14 @@ export default function NewQrActionPage() {
           <div className="space-y-1.5">
             <Label className="text-xs font-bold">フォルダ</Label>
             <Select
-              value={folderId}
+              value={effectiveFolderId}
               onValueChange={(v) => v && setFolderId(v)}
             >
               <SelectTrigger className="h-10 w-full">
-                <SelectValue />
+                <SelectValue placeholder="フォルダを選択" />
               </SelectTrigger>
               <SelectContent>
-                {MOCK_QR_ACTION_FOLDERS.map((f) => (
+                {folderList.map((f) => (
                   <SelectItem key={f.id} value={f.id}>
                     {f.name}
                   </SelectItem>
@@ -284,13 +320,20 @@ export default function NewQrActionPage() {
                 </p>
               </div>
 
+              {error && (
+                <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {error}
+                </div>
+              )}
               <div className="flex items-center justify-between pt-3 pb-2">
                 <div className="flex items-center gap-3">
                   <Button
                     variant="outline"
-                    className="border-primary text-primary hover:bg-primary/10 hover:text-primary h-10 px-10"
+                    onClick={handleSave}
+                    disabled={saving || !name.trim() || !effectiveFolderId}
+                    className="border-primary text-primary hover:bg-primary/10 hover:text-primary h-10 px-10 disabled:opacity-50"
                   >
-                    保存
+                    {saving ? "保存中…" : "保存"}
                   </Button>
                   <Button variant="outline" className="h-10 px-6">
                     稼働プレビュー

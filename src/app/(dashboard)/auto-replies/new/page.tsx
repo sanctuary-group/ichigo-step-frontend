@@ -13,19 +13,54 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MOCK_AUTO_REPLY_FOLDERS } from "@/mocks/data";
+import { fetchFolders } from "@/lib/api/folders";
+import { createAutoReply } from "@/lib/api/auto-replies";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
+import { ApiError } from "@/lib/api/client";
 
 type AudienceMode = "active" | "blocked";
 type ActionMode = "once" | "repeat";
 
 export default function NewAutoReplyPage() {
   const router = useRouter();
+  const { currentChannelId } = useAuth();
+  const { data: folders } = useResource(
+    currentChannelId ? "auto-reply-folders" : null,
+    () => fetchFolders("auto-reply-folders"),
+  );
+  const folderList = folders ?? [];
+
   const [audience, setAudience] = useState<AudienceMode>("active");
-  const [folderId, setFolderId] = useState<string>("arf_default");
+  const [folderId, setFolderId] = useState<string>("");
   const [keywordMode, setKeywordMode] = useState<string>("all");
   const [excludeBracket, setExcludeBracket] = useState(false);
   const [schedule, setSchedule] = useState<string>("always");
   const [action, setAction] = useState<ActionMode>("repeat");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const effectiveFolderId = folderId || folderList[0]?.id || "";
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      await createAutoReply({
+        auto_reply_folder_id: Number(effectiveFolderId),
+        trigger_type: keywordMode as "all" | "keyword" | "follow",
+        match_mode: "partial",
+        exclude_bracket: excludeBracket,
+        audience,
+        schedule_type: schedule as "always" | "business" | "custom",
+        action_mode: action,
+      });
+      router.push("/auto-replies");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "登録に失敗しました");
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
@@ -66,12 +101,15 @@ export default function NewAutoReplyPage() {
         </Section>
 
         <Section title="フォルダ">
-          <Select value={folderId} onValueChange={(v) => v && setFolderId(v)}>
+          <Select
+            value={effectiveFolderId}
+            onValueChange={(v) => v && setFolderId(v)}
+          >
             <SelectTrigger className="h-10 w-full">
-              <SelectValue />
+              <SelectValue placeholder="フォルダを選択" />
             </SelectTrigger>
             <SelectContent>
-              {MOCK_AUTO_REPLY_FOLDERS.map((f) => (
+              {folderList.map((f) => (
                 <SelectItem key={f.id} value={f.id}>
                   {f.name}
                 </SelectItem>
@@ -155,6 +193,12 @@ export default function NewAutoReplyPage() {
         </Section>
       </div>
 
+      {error && (
+        <div className="max-w-md mx-auto rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive text-center">
+          {error}
+        </div>
+      )}
+
       <div className="flex items-center justify-center gap-4 pt-4">
         <Button
           variant="outline"
@@ -164,10 +208,11 @@ export default function NewAutoReplyPage() {
           戻る
         </Button>
         <Button
-          onClick={() => router.push("/auto-replies")}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-12 font-bold"
+          onClick={handleSave}
+          disabled={saving || !effectiveFolderId}
+          className="bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-12 font-bold disabled:opacity-50"
         >
-          登録
+          {saving ? "登録中…" : "登録"}
         </Button>
       </div>
     </div>

@@ -21,6 +21,19 @@ export async function bulkDeleteQrActions(ids: string[]): Promise<void> {
   });
 }
 
+/** POST /qr-actions */
+export async function createQrAction(input: {
+  name: string;
+  qr_action_folder_id: number;
+  audience: "new" | "all";
+  message?: string;
+  combine_greeting?: boolean;
+  action_type?: "none" | "add_tag" | "start_scenario" | "track_source";
+}): Promise<MockQrAction> {
+  const data = await apiFetch<ApiQrAction>("/qr-actions", { method: "POST", body: input });
+  return mapQrAction(data);
+}
+
 /** PATCH /qr-actions/{id}/toggle-active */
 export async function toggleQrAction(id: string): Promise<MockQrAction> {
   const data = await apiFetch<ApiQrAction>(`/qr-actions/${id}/toggle-active`, { method: "PATCH" });
