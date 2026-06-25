@@ -7,41 +7,62 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
-  MOCK_TAG_FOLDERS,
-  MOCK_FRIEND_FIELD_FOLDERS,
-} from "@/mocks/data";
-import { cn } from "@/lib/utils";
+  fetchCsvExportOptions,
+  createCsvExport,
+} from "@/lib/api/csv-jobs";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
+import { ApiError } from "@/lib/api/client";
 
 const MAX_NAME = 50;
 
 type Audience = "active" | "blocked" | "blockedBy";
 
-const SINGLE_FIELDS = [
-  { id: "status_message", label: "ステータスメッセージ" },
-  { id: "memo", label: "個別メモ" },
-  { id: "added_at", label: "友だち追加日" },
-  { id: "mark", label: "対応マーク" },
-  { id: "last_received_at", label: "最終メッセージ受信日時" },
-  { id: "current_step", label: "配信中ステップ" },
-  { id: "source", label: "流入経路" },
-];
-
 export default function NewExportCsvPage() {
   const router = useRouter();
+  const { currentChannelId } = useAuth();
+
+  const { data: options } = useResource(
+    currentChannelId ? `csv-export-options:${currentChannelId}` : null,
+    () => fetchCsvExportOptions(),
+  );
+  const singleFields = options?.singleFields ?? [];
+  const fieldFolders = options?.fieldFolders ?? [];
+  const audienceCounts = options?.audienceCounts ?? {
+    active: 0,
+    blocked: 0,
+    blockedBy: 0,
+  };
+
   const [name, setName] = useState("");
   const [audience, setAudience] = useState<Audience>("active");
-  const [singleSelected, setSingleSelected] = useState<Set<string>>(new Set());
-  const [tagFolderId, setTagFolderId] = useState<string>("tagf_default");
-  const [fieldFolderId, setFieldFolderId] = useState<string>("fff_default");
+  const [columns, setColumns] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const toggleSingle = (id: string) => {
-    setSingleSelected((prev) => {
+  const toggleColumn = (id: string) =>
+    setColumns((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+
+  async function submit() {
+    setSaving(true);
+    setError(null);
+    try {
+      await createCsvExport({
+        name: name.trim(),
+        audience,
+        columns: [...columns],
+      });
+      router.push("/data-management/csv");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "作成に失敗しました");
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
@@ -67,28 +88,16 @@ export default function NewExportCsvPage() {
           onValueChange={(v) => v && setAudience(v as Audience)}
           className="space-y-2"
         >
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <RadioGroupItem value="active" />
-              有効友だち
-            </label>
-            {audience === "active" && (
-              <Button className="bg-blue-500 hover:bg-blue-600 text-white h-9 px-6">
-                絞込み
-              </Button>
-            )}
-          </div>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <RadioGroupItem value="active" />
+            有効友だち
+          </label>
           {audience === "active" && (
             <div className="rounded-md bg-muted/40 px-4 py-3 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
               <div>対象人数（有効友だちのみ）</div>
-              <a
-                href="#"
-                className="text-blue-600 dark:text-blue-400 underline hover:no-underline"
-              >
-                2人
-              </a>
-              <div>絞り込み条件</div>
-              <div></div>
+              <div className="text-blue-600 dark:text-blue-400 tabular-nums">
+                {audienceCounts.active}人
+              </div>
             </div>
           )}
           <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -102,10 +111,10 @@ export default function NewExportCsvPage() {
         </RadioGroup>
       </Section>
 
-      <Section title="単一選択項目">
+      <Section title="出力する項目（単一）">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-y-2 gap-x-6">
-          {SINGLE_FIELDS.map((f) => {
-            const checked = singleSelected.has(f.id);
+          {singleFields.map((f) => {
+            const checked = columns.has(f.id);
             return (
               <label
                 key={f.id}
@@ -114,7 +123,7 @@ export default function NewExportCsvPage() {
                 <input
                   type="checkbox"
                   checked={checked}
-                  onChange={() => toggleSingle(f.id)}
+                  onChange={() => toggleColumn(f.id)}
                   className="size-4 rounded border-border accent-primary"
                 />
                 {f.label}
@@ -122,44 +131,56 @@ export default function NewExportCsvPage() {
             );
           })}
         </div>
-      </Section>
-
-      <Section title="複数選択項目">
-        <div className="space-y-6">
-          <FolderMultiPicker
-            label="タグ"
-            folders={MOCK_TAG_FOLDERS.map((f) => ({
-              id: f.id,
-              name: f.name,
-              count: 0,
-            }))}
-            selectedFolderId={tagFolderId}
-            onSelectFolder={setTagFolderId}
-          />
-          <FolderMultiPicker
-            label="友だち情報"
-            folders={MOCK_FRIEND_FIELD_FOLDERS.map((f) => ({
-              id: f.id,
-              name: f.name,
-              count: f.id === "fff_basic" ? 4 : f.id === "fff_address" ? 5 : 0,
-            }))}
-            selectedFolderId={fieldFolderId}
-            onSelectFolder={setFieldFolderId}
-          />
-        </div>
-      </Section>
-
-      <div className="pt-2">
-        <Button
-          onClick={() => router.push("/data-management/csv")}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-6 font-bold"
-        >
-          この条件でCSVを作成・更新
-        </Button>
-        <p className="text-xs text-muted-foreground mt-2">
-          ※データ量によっては、CSVの作成に数時間かかる場合があります。
+        <p className="text-xs text-muted-foreground mt-3">
+          ※
+          LINEユーザーID・表示名・タグは常に出力されます。チェックした項目が追加で列に含まれます。
         </p>
+      </Section>
+
+      {fieldFolders.length > 0 && (
+        <Section title="友だち情報フォルダ">
+          <div className="flex flex-wrap gap-2">
+            {fieldFolders.map((f) => (
+              <span
+                key={f.id}
+                className="inline-flex items-center gap-1 rounded-md bg-muted px-3 py-1.5 text-xs"
+              >
+                {f.name}
+                <span className="text-muted-foreground tabular-nums">
+                  ({f.count})
+                </span>
+              </span>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {error && (
+        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      <div className="pt-2 flex items-center gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => router.push("/data-management/csv")}
+          className="h-10 px-6"
+        >
+          キャンセル
+        </Button>
+        <Button
+          onClick={submit}
+          disabled={saving || name.trim().length === 0}
+          className="bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-6 font-bold disabled:opacity-50"
+        >
+          {saving ? "作成中..." : "この条件でCSVを作成・更新"}
+        </Button>
       </div>
+      <p className="text-xs text-muted-foreground">
+        ※データ量によっては、CSVの作成に時間がかかる場合があります。
+      </p>
     </div>
   );
 }
@@ -177,68 +198,6 @@ function Section({
         <h2 className="text-sm font-bold">{title}</h2>
       </div>
       <div>{children}</div>
-    </div>
-  );
-}
-
-function FolderMultiPicker({
-  label,
-  folders,
-  selectedFolderId,
-  onSelectFolder,
-}: {
-  label: string;
-  folders: { id: string; name: string; count: number }[];
-  selectedFolderId: string;
-  onSelectFolder: (id: string) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-medium">{label}</div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled
-          className="h-8 bg-muted-foreground/20 text-white border-transparent disabled:opacity-60"
-        >
-          選択クリア
-        </Button>
-      </div>
-      <div className="grid grid-cols-2 rounded-md border border-border bg-muted/20 min-h-40">
-        <div className="border-r border-border p-3 space-y-1">
-          {folders.map((f) => {
-            const active = f.id === selectedFolderId;
-            return (
-              <button
-                key={f.id}
-                onClick={() => onSelectFolder(f.id)}
-                className={cn(
-                  "w-full flex items-center gap-2 text-left px-2 py-1.5 rounded text-sm",
-                  active ? "" : "hover:bg-muted/60"
-                )}
-              >
-                {active ? (
-                  <span className="size-3 bg-primary rounded-sm shrink-0" />
-                ) : (
-                  <input
-                    type="checkbox"
-                    onChange={() => {}}
-                    className="size-3.5 rounded border-border accent-primary"
-                  />
-                )}
-                <span>
-                  {f.name} ({f.count})
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <div className="p-3 text-sm text-muted-foreground">
-          分類を選択して下さい
-        </div>
-      </div>
-      <div className="text-xs text-muted-foreground">選択した項目</div>
     </div>
   );
 }

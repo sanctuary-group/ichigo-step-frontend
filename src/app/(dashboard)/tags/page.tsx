@@ -1,28 +1,29 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faPlus,
   faMagnifyingGlass,
+  faPenToSquare,
+  faTrash,
   faFolderPlus,
+  faFolder,
   faArrowsUpDown,
-  faSort,
+  faArrowUp,
+  faArrowDown,
+  faCheck,
+  faAnglesLeft,
+  faAnglesRight,
+  faBolt,
   faTrashCan,
-  faFolderTree,
-  faChevronLeft,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogClose,
@@ -31,26 +32,58 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { MOCK_TAG_FOLDERS } from "@/mocks/data";
 import { cn } from "@/lib/utils";
-import { fetchTags, createTag, deleteTag } from "@/lib/api/tags";
+import {
+  fetchTags,
+  createTag,
+  deleteTag,
+  bulkDeleteTags,
+  reorderTags,
+  type TagWithCount,
+} from "@/lib/api/tags";
+import {
+  fetchFolders,
+  deleteFolder as deleteFolderApi,
+  type Folder,
+} from "@/lib/api/folders";
 import { useResource } from "@/lib/api/use-resource";
 import { useAuth } from "@/lib/auth/auth-context";
+import { FolderDialog } from "@/components/tags/folder-dialog";
+import { BulkMoveDialog } from "@/components/tags/bulk-move-dialog";
+
+function pad(n: number) {
+  return n.toString().padStart(2, "0");
+}
+
+function formatYmd(iso: string | null | undefined) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
+}
 
 export default function TagsPage() {
+  const router = useRouter();
   const { currentChannelId } = useAuth();
-  const [selectedFolderId, setSelectedFolderId] = useState<string>("tagf_default");
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [folderVisible, setFolderVisible] = useState(true);
+  const [folderHidden, setFolderHidden] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [pageSize, setPageSize] = useState("100");
+  const [folderReorder, setFolderReorder] = useState(false);
+  const [tagReorder, setTagReorder] = useState(false);
 
-  const { data: tags, mutate } = useResource(
+  const { data, mutate } = useResource(
     currentChannelId ? `tags-page:${currentChannelId}` : null,
-    () => fetchTags(),
+    async () => {
+      const [tags, folders] = await Promise.all([
+        fetchTags(),
+        fetchFolders("tag-folders"),
+      ]);
+      return { tags, folders };
+    },
   );
-  const allTags = useMemo(() => tags ?? [], [tags]);
+  const allTags = useMemo(() => data?.tags ?? [], [data]);
+  const folders = useMemo(() => data?.folders ?? [], [data]);
 
   // 新規作成ダイアログ
   const [createOpen, setCreateOpen] = useState(false);
@@ -59,11 +92,19 @@ export default function TagsPage() {
   const [saving, setSaving] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  // フォルダ追加 / 一括フォルダ変更
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+
   async function handleCreate() {
     setSaving(true);
     setCreateError(null);
     try {
-      await createTag({ name: newName.trim(), color: newColor, tag_folder_id: null });
+      await createTag({
+        name: newName.trim(),
+        color: newColor,
+        tag_folder_id: selectedFolderId ? Number(selectedFolderId) : null,
+      });
       setNewName("");
       setCreateOpen(false);
       mutate();
@@ -76,23 +117,49 @@ export default function TagsPage() {
 
   async function handleBulkDelete() {
     const ids = [...selectedIds];
-    await Promise.all(ids.map((id) => deleteTag(id)));
+    if (ids.length === 0) return;
+    if (!confirm(`${ids.length}件のタグを削除しますか？`)) return;
+    await bulkDeleteTags(ids);
     setSelectedIds(new Set());
+    mutate();
+  }
+
+  async function handleDeleteTag(t: TagWithCount) {
+    const note =
+      t.friendsCount > 0
+        ? `「${t.name}」を削除します。${t.friendsCount} 件の友だちから外されます。`
+        : `「${t.name}」を削除しますか？`;
+    if (!confirm(note)) return;
+    await deleteTag(t.id);
+    mutate();
+  }
+
+  async function handleDeleteFolder(f: Folder) {
+    if (f.isSystem) return;
+    const count = f.itemsCount ?? 0;
+    const msg =
+      count > 0
+        ? `「${f.name}」を削除します。${count} 件のタグも未分類に移動します。`
+        : `「${f.name}」を削除しますか？`;
+    if (!confirm(msg)) return;
+    await deleteFolderApi("tag-folders", f.id);
+    if (selectedFolderId === f.id) setSelectedFolderId(null);
     mutate();
   }
 
   const folderCounts = useMemo(() => {
     const map = new Map<string, number>();
     for (const t of allTags) {
-      const fid = t.folderId ?? "tagf_default";
-      map.set(fid, (map.get(fid) ?? 0) + 1);
+      if (!t.folderId) continue;
+      map.set(t.folderId, (map.get(t.folderId) ?? 0) + 1);
     }
     return map;
   }, [allTags]);
 
   const filtered = useMemo(() => {
     return allTags.filter((t) => {
-      if ((t.folderId ?? "tagf_default") !== selectedFolderId) return false;
+      if (selectedFolderId && (t.folderId ?? null) !== selectedFolderId)
+        return false;
       if (query.trim()) {
         const s = query.trim().toLowerCase();
         if (!t.name.toLowerCase().includes(s)) return false;
@@ -125,6 +192,15 @@ export default function TagsPage() {
     });
   };
 
+  const moveTag = async (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (j < 0 || j >= filtered.length) return;
+    const ids = filtered.map((t) => t.id);
+    [ids[index], ids[j]] = [ids[j], ids[index]];
+    await reorderTags(ids);
+    mutate();
+  };
+
   const selectionCount = selectedIds.size;
 
   return (
@@ -137,48 +213,89 @@ export default function TagsPage() {
       </div>
 
       <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-        {folderVisible && (
+        {!folderHidden && (
           <aside className="w-full md:w-56 shrink-0 border-b md:border-b-0 md:border-r border-border flex flex-col max-h-[40vh] md:max-h-none">
             <div className="flex items-center gap-2 px-3 py-3 border-b border-border">
-              <Button variant="outline" size="sm" className="flex-1 h-9 px-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 h-9 px-2"
+                onClick={() => setFolderDialogOpen(true)}
+              >
                 <FontAwesomeIcon icon={faFolderPlus} className="size-3" />
                 フォルダ追加
               </Button>
-              <Button variant="outline" size="sm" className="flex-1 h-9 px-2">
-                <FontAwesomeIcon icon={faArrowsUpDown} className="size-3" />
-                並べ替え
+              <Button
+                variant={folderReorder ? "default" : "outline"}
+                size="sm"
+                className="h-9 px-2"
+                onClick={() => setFolderReorder((v) => !v)}
+              >
+                <FontAwesomeIcon
+                  icon={folderReorder ? faCheck : faArrowsUpDown}
+                  className="size-3"
+                />
+                {folderReorder ? "完了" : "並べ替え"}
               </Button>
             </div>
             <ul className="flex-1 overflow-y-auto p-2 space-y-1">
-              {MOCK_TAG_FOLDERS.map((f) => {
+              <li>
+                <button
+                  onClick={() => {
+                    setSelectedFolderId(null);
+                    setSelectedIds(new Set());
+                  }}
+                  className={cn(
+                    "w-full text-left px-3 py-2 rounded-md text-sm transition-colors",
+                    selectedFolderId === null
+                      ? "bg-muted text-foreground"
+                      : "text-foreground hover:bg-muted/50",
+                  )}
+                >
+                  すべて ({allTags.length})
+                </button>
+              </li>
+              {folders.map((f) => {
                 const active = f.id === selectedFolderId;
                 const count = folderCounts.get(f.id) ?? 0;
                 return (
-                  <li key={f.id}>
+                  <li key={f.id} className="group flex items-center gap-1">
                     <button
                       onClick={() => {
                         setSelectedFolderId(f.id);
                         setSelectedIds(new Set());
                       }}
                       className={cn(
-                        "w-full text-left px-3 py-2 rounded-md text-sm transition-colors",
+                        "flex-1 text-left px-3 py-2 rounded-md text-sm transition-colors min-w-0",
                         active
                           ? "bg-muted text-foreground"
-                          : "text-foreground hover:bg-muted/50"
+                          : "text-foreground hover:bg-muted/50",
                       )}
                     >
-                      {f.name} ({count})
+                      <span className="truncate">
+                        {f.name} ({count})
+                      </span>
                     </button>
+                    {!folderReorder && !f.isSystem && (
+                      <Button
+                        variant="ghost"
+                        className="size-7 p-0 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => handleDeleteFolder(f)}
+                        aria-label="削除"
+                      >
+                        <FontAwesomeIcon icon={faTrash} className="size-3" />
+                      </Button>
+                    )}
                   </li>
                 );
               })}
             </ul>
             <button
               type="button"
-              onClick={() => setFolderVisible(false)}
+              onClick={() => setFolderHidden(true)}
               className="border-t border-border px-4 py-3 text-sm text-muted-foreground hover:bg-muted/40 flex items-center gap-2"
             >
-              <FontAwesomeIcon icon={faChevronLeft} className="size-3" />
+              <FontAwesomeIcon icon={faAnglesLeft} className="size-3" />
               フォルダを非表示
             </button>
           </aside>
@@ -196,29 +313,31 @@ export default function TagsPage() {
                 新規作成
               </Button>
               <Button
+                variant={tagReorder ? "default" : "outline"}
                 size="sm"
-                className="h-9 bg-primary hover:bg-primary/90 text-primary-foreground"
+                className="h-9"
+                onClick={() => setTagReorder((v) => !v)}
+                disabled={filtered.length === 0}
               >
-                <FontAwesomeIcon icon={faPlus} className="size-3" />
-                CSV一括追加
+                <FontAwesomeIcon
+                  icon={tagReorder ? faCheck : faArrowsUpDown}
+                  className="size-3"
+                />
+                {tagReorder ? "完了" : "並べ替え"}
               </Button>
             </div>
             <div className="flex items-center gap-2">
-              {!folderVisible && (
+              {folderHidden && (
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-9"
-                  onClick={() => setFolderVisible(true)}
+                  onClick={() => setFolderHidden(false)}
                 >
-                  <FontAwesomeIcon icon={faFolderTree} className="size-3.5" />
+                  <FontAwesomeIcon icon={faAnglesRight} className="size-3.5" />
                   フォルダを表示
                 </Button>
               )}
-              <Button variant="outline" size="sm" className="h-9">
-                <FontAwesomeIcon icon={faArrowsUpDown} className="size-3" />
-                並べ替え
-              </Button>
               {searchOpen ? (
                 <div className="relative w-56">
                   <FontAwesomeIcon
@@ -267,38 +386,50 @@ export default function TagsPage() {
                       aria-label="すべて選択"
                     />
                   </th>
-                  <SortableHeader label="管理名" />
+                  <th className="px-3 py-2 text-left font-bold text-foreground">
+                    管理名
+                  </th>
                   <th className="px-3 py-2 text-left font-bold text-foreground">
                     アクション設定
                   </th>
                   <th className="px-3 py-2 text-left font-bold text-foreground w-32">
                     人数制限
                   </th>
-                  <SortableHeader label="作成日" className="w-32" />
-                  <SortableHeader label="最終編集日" className="w-32" />
+                  <th className="px-3 py-2 text-left font-bold text-foreground w-32">
+                    作成日
+                  </th>
+                  <th className="px-3 py-2 text-left font-bold text-foreground w-32">
+                    最終編集日
+                  </th>
+                  <th className="px-3 py-2 text-left font-bold text-foreground w-20">
+                    人数
+                  </th>
+                  <th className="px-3 py-2 text-left font-bold text-foreground w-24">
+                    操作
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={8}
                       className="px-3 py-12 text-sm text-center text-muted-foreground"
                     >
-                      {tags === undefined
+                      {data === undefined
                         ? "読み込み中…"
                         : "タグが登録されていません"}
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((t) => {
+                  filtered.map((t, rowIdx) => {
                     const checked = selectedIds.has(t.id);
                     return (
                       <tr
                         key={t.id}
                         className={cn(
                           "border-b border-border hover:bg-muted/30",
-                          checked && "bg-primary/5"
+                          checked && "bg-primary/5",
                         )}
                       >
                         <td className="px-3 py-3">
@@ -310,25 +441,100 @@ export default function TagsPage() {
                           />
                         </td>
                         <td className="px-3 py-3 font-medium">
-                          <span className="inline-flex items-center gap-2">
+                          <Link
+                            href={`/tags/${t.id}/edit`}
+                            className="inline-flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:underline"
+                          >
                             <span
                               className="size-2.5 rounded-full"
                               style={{ backgroundColor: t.color }}
                             />
                             {t.name}
-                          </span>
+                          </Link>
                         </td>
                         <td className="px-3 py-3 text-xs text-muted-foreground">
-                          {t.actionLabel ?? "—"}
+                          {t.actionCount > 0 ? (
+                            <span className="inline-flex items-center gap-1 text-foreground">
+                              <FontAwesomeIcon
+                                icon={faBolt}
+                                className="size-3 text-amber-500"
+                              />
+                              アクション{t.actionCount}件
+                            </span>
+                          ) : (
+                            "アクション設定なし"
+                          )}
                         </td>
                         <td className="px-3 py-3 text-xs text-muted-foreground">
-                          {t.capacity ?? "—"}
+                          {t.personLimit !== null
+                            ? `${t.personLimit.toLocaleString()}人`
+                            : "人数制限なし"}
                         </td>
                         <td className="px-3 py-3 text-xs text-muted-foreground tabular-nums">
-                          {t.createdAt?.slice(0, 10).replace(/-/g, "/") ?? "—"}
+                          {formatYmd(t.createdAt)}
                         </td>
                         <td className="px-3 py-3 text-xs text-muted-foreground tabular-nums">
-                          {t.updatedAt?.slice(0, 10).replace(/-/g, "/") ?? "—"}
+                          {formatYmd(t.updatedAt)}
+                        </td>
+                        <td className="px-3 py-3 text-xs text-muted-foreground tabular-nums">
+                          {t.friendsCount.toLocaleString()}人
+                        </td>
+                        <td className="px-3 py-3">
+                          {tagReorder ? (
+                            <div className="inline-flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                className="size-9 p-0 text-muted-foreground disabled:opacity-30"
+                                aria-label="上へ"
+                                disabled={rowIdx === 0}
+                                onClick={() => moveTag(rowIdx, -1)}
+                              >
+                                <FontAwesomeIcon
+                                  icon={faArrowUp}
+                                  className="size-3.5"
+                                />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                className="size-9 p-0 text-muted-foreground disabled:opacity-30"
+                                aria-label="下へ"
+                                disabled={rowIdx === filtered.length - 1}
+                                onClick={() => moveTag(rowIdx, 1)}
+                              >
+                                <FontAwesomeIcon
+                                  icon={faArrowDown}
+                                  className="size-3.5"
+                                />
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                className="size-9 p-0"
+                                aria-label="編集"
+                                onClick={() =>
+                                  router.push(`/tags/${t.id}/edit`)
+                                }
+                              >
+                                <FontAwesomeIcon
+                                  icon={faPenToSquare}
+                                  className="size-3.5"
+                                />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                className="size-9 p-0 text-muted-foreground hover:text-destructive"
+                                aria-label="削除"
+                                onClick={() => handleDeleteTag(t)}
+                              >
+                                <FontAwesomeIcon
+                                  icon={faTrash}
+                                  className="size-3.5"
+                                />
+                              </Button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
@@ -343,10 +549,11 @@ export default function TagsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={selectionCount === 0}
+                disabled={selectionCount === 0 || folders.length === 0}
+                onClick={() => setBulkMoveOpen(true)}
                 className="h-9 disabled:opacity-50"
               >
-                <FontAwesomeIcon icon={faFolderTree} className="size-3.5" />
+                <FontAwesomeIcon icon={faFolder} className="size-3.5" />
                 一括フォルダ変更
               </Button>
               <Button
@@ -359,23 +566,14 @@ export default function TagsPage() {
                 <FontAwesomeIcon icon={faTrashCan} className="size-3.5" />
                 一括削除
               </Button>
-              <a
-                href="#"
-                className="text-sm text-foreground underline hover:no-underline ml-2"
+              <Link
+                href="/tags/trashed"
+                className="inline-flex items-center gap-1.5 text-sm text-foreground underline hover:no-underline ml-2"
               >
+                <FontAwesomeIcon icon={faTrashCan} className="size-3" />
                 削除したアイテム
-              </a>
+              </Link>
             </div>
-            <Select value={pageSize} onValueChange={(v) => v && setPageSize(v)}>
-              <SelectTrigger className="h-9 w-28">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="50">50/page</SelectItem>
-                <SelectItem value="100">100/page</SelectItem>
-                <SelectItem value="200">200/page</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </section>
       </div>
@@ -412,7 +610,9 @@ export default function TagsPage() {
             </div>
           </div>
           <DialogFooter>
-            <DialogClose render={<Button variant="outline" />}>キャンセル</DialogClose>
+            <DialogClose render={<Button variant="outline" />}>
+              キャンセル
+            </DialogClose>
             <Button
               onClick={handleCreate}
               disabled={saving || !newName.trim()}
@@ -423,31 +623,22 @@ export default function TagsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
 
-function SortableHeader({
-  label,
-  className,
-}: {
-  label: string;
-  className?: string;
-}) {
-  return (
-    <th
-      className={cn(
-        "px-3 py-2 text-left font-bold text-foreground cursor-pointer hover:text-primary",
-        className
-      )}
-    >
-      <span className="inline-flex items-center gap-1">
-        {label}
-        <FontAwesomeIcon
-          icon={faSort}
-          className="size-2.5 text-muted-foreground"
-        />
-      </span>
-    </th>
+      <FolderDialog
+        open={folderDialogOpen}
+        onClose={() => setFolderDialogOpen(false)}
+        onCreated={() => mutate()}
+      />
+      <BulkMoveDialog
+        open={bulkMoveOpen}
+        onClose={() => setBulkMoveOpen(false)}
+        folders={folders}
+        ids={[...selectedIds]}
+        onDone={() => {
+          setSelectedIds(new Set());
+          mutate();
+        }}
+      />
+    </div>
   );
 }

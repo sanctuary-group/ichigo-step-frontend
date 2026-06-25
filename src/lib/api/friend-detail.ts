@@ -8,7 +8,7 @@
 // 右パネルは monolith に忠実な型（field_type / options / show_in_chat_panel 等）を
 // 必要とするため、ここでは Mock マッパを通さず生の API レスポンス型を扱う。
 
-import { apiFetch } from "./client";
+import { apiFetch, apiFetchPaginated } from "./client";
 import type { ApiFriend, ApiFriendField } from "./types";
 
 /* ─────────────────────────── 友だち詳細（基本情報タブ用の生データ） ─────────────────────────── */
@@ -161,12 +161,21 @@ export async function reorderFriendMemos(friendId: number, ids: number[]): Promi
 
 /* ─────────────────────────── 友だち操作（基本情報編集 / 友だち削除） ─────────────────────────── */
 
-/** PUT /friends/{id}（system_display_name / source の更新）。 */
+/** PUT /friends/{id}（system_display_name / source / note の更新）。 */
 export async function updateFriendBasic(
   friendId: number,
-  payload: { system_display_name?: string | null; source?: string | null },
+  payload: { system_display_name?: string | null; source?: string | null; note?: string | null },
 ): Promise<void> {
   await apiFetch(`/friends/${friendId}`, { method: "PUT", body: payload });
+}
+
+/**
+ * GET /friends/{id}/messages のページネーション meta から総メッセージ数を取得。
+ * （テナント API に messageCount 専用エンドポイントが無いため meta.total を使う）
+ */
+export async function fetchFriendMessageCount(friendId: number): Promise<number> {
+  const { meta } = await apiFetchPaginated(`/friends/${friendId}/messages`);
+  return meta.total ?? 0;
 }
 
 /** POST /friends/{id}/refresh-profile（LINE プロフィール再取得）。 */

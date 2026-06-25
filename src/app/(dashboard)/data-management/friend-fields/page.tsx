@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -9,56 +9,82 @@ import {
   faArrowsUpDown,
   faTrashCan,
   faFolderTree,
+  faPenToSquare,
+  faTrash,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
-import { MOCK_FRIEND_FIELD_FOLDERS } from "@/mocks/data";
 import { cn } from "@/lib/utils";
-import { fetchFriendFields, deleteFriendField } from "@/lib/api/friend-fields";
+import {
+  fetchFriendFields,
+  deleteFriendField,
+} from "@/lib/api/friend-fields";
+import {
+  fetchFolders,
+  deleteFolder as deleteFolderApi,
+} from "@/lib/api/folders";
 import { useResource } from "@/lib/api/use-resource";
 import { useAuth } from "@/lib/auth/auth-context";
-
-// フォルダ一覧APIが無いため、取得分はすべて既定フォルダ配下に表示。
-const DEFAULT_FOLDER_ID = "fff_default";
+import { FriendFieldFolderDialog } from "@/components/data-management/friend-field-folder-dialog";
 
 export default function FriendFieldsPage() {
   const { currentChannelId } = useAuth();
-  const [selectedFolderId, setSelectedFolderId] = useState<string>(DEFAULT_FOLDER_ID);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+
+  const { data: folders, mutate: mutateFolders } = useResource(
+    currentChannelId ? `friend-field-folders:${currentChannelId}` : null,
+    () => fetchFolders("friend-field-folders"),
+  );
+  const folderList = folders ?? [];
 
   const { data: fields, mutate } = useResource(
-    currentChannelId ? `friend-fields:${currentChannelId}` : null,
-    () => fetchFriendFields(),
+    currentChannelId
+      ? `friend-fields:${currentChannelId}:${selectedFolderId ?? "all"}`
+      : null,
+    () => fetchFriendFields({ folder: selectedFolderId ?? undefined }),
   );
-  const allItems = useMemo(() => fields ?? [], [fields]);
+  const items = fields ?? [];
 
-  const folderCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    map.set(DEFAULT_FOLDER_ID, allItems.length);
-    return map;
-  }, [allItems]);
+  const deleteFolder = async (folderId: string) => {
+    if (!confirm("このフォルダを削除しますか？")) return;
+    await deleteFolderApi("friend-field-folders", folderId);
+    if (selectedFolderId === folderId) setSelectedFolderId(null);
+    mutateFolders();
+    mutate();
+  };
 
-  const filtered = useMemo(
-    () => (selectedFolderId === DEFAULT_FOLDER_ID ? allItems : []),
-    [selectedFolderId, allItems],
-  );
+  const deleteField = async (id: string, name: string) => {
+    if (!confirm(`「${name}」を削除しますか？`)) return;
+    await deleteFriendField(id);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    mutate();
+    mutateFolders();
+  };
 
   async function handleBulkDelete() {
+    if (!confirm(`${selectedIds.size} 件を削除しますか？`)) return;
     await Promise.all([...selectedIds].map((id) => deleteFriendField(id)));
     setSelectedIds(new Set());
     mutate();
+    mutateFolders();
   }
 
   const allCheckedInView =
-    filtered.length > 0 && filtered.every((f) => selectedIds.has(f.id));
+    items.length > 0 && items.every((f) => selectedIds.has(f.id));
 
   const toggleAll = () => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (allCheckedInView) {
-        for (const f of filtered) next.delete(f.id);
+        for (const f of items) next.delete(f.id);
       } else {
-        for (const f of filtered) next.add(f.id);
+        for (const f of items) next.add(f.id);
       }
       return next;
     });
@@ -91,6 +117,7 @@ export default function FriendFieldsPage() {
             <div className="flex items-center gap-1">
               <button
                 type="button"
+                onClick={() => setFolderDialogOpen(true)}
                 className="grid place-items-center size-7 rounded hover:bg-muted text-muted-foreground"
                 aria-label="フォルダ追加"
               >
@@ -98,7 +125,8 @@ export default function FriendFieldsPage() {
               </button>
               <button
                 type="button"
-                className="grid place-items-center size-7 rounded hover:bg-muted text-muted-foreground"
+                disabled
+                className="grid place-items-center size-7 rounded text-muted-foreground/50"
                 aria-label="並べ替え"
               >
                 <FontAwesomeIcon icon={faArrowsUpDown} className="size-3.5" />
@@ -106,25 +134,36 @@ export default function FriendFieldsPage() {
             </div>
           </div>
           <ul className="flex-1 overflow-y-auto px-2 space-y-1">
-            {MOCK_FRIEND_FIELD_FOLDERS.map((f) => {
+            {folderList.map((f) => {
               const active = f.id === selectedFolderId;
-              const count = folderCounts.get(f.id) ?? 0;
               return (
-                <li key={f.id}>
+                <li key={f.id} className="group flex items-center gap-1">
                   <button
                     onClick={() => {
                       setSelectedFolderId(f.id);
                       setSelectedIds(new Set());
                     }}
                     className={cn(
-                      "w-full text-left px-3 py-2 rounded-md text-sm transition-colors",
+                      "flex-1 text-left px-3 py-2 rounded-md text-sm transition-colors min-w-0",
                       active
                         ? "bg-muted text-foreground"
-                        : "text-foreground hover:bg-muted/50"
+                        : "text-foreground hover:bg-muted/50",
                     )}
                   >
-                    {f.name} ({count})
+                    <span className="truncate">
+                      {f.name} ({f.itemsCount})
+                    </span>
                   </button>
+                  {!f.isSystem && (
+                    <Button
+                      variant="ghost"
+                      className="size-7 p-0 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => deleteFolder(f.id)}
+                      aria-label="削除"
+                    >
+                      <FontAwesomeIcon icon={faTrash} className="size-3" />
+                    </Button>
+                  )}
                 </li>
               );
             })}
@@ -134,7 +173,7 @@ export default function FriendFieldsPage() {
         <section className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <div className="flex items-center justify-between gap-3 px-6 py-3 flex-wrap">
             <Link
-              href="/data-management/friend-fields/new"
+              href={`/data-management/friend-fields/new${selectedFolderId ? `?folder=${selectedFolderId}` : ""}`}
               className="inline-flex items-center justify-center gap-1 h-9 px-3 rounded-md text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
             >
               <FontAwesomeIcon icon={faPlus} className="size-3" />
@@ -143,7 +182,8 @@ export default function FriendFieldsPage() {
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
-                className="h-9 bg-zinc-500 hover:bg-zinc-600 text-white"
+                disabled
+                className="h-9 bg-zinc-500 text-white opacity-50"
               >
                 <FontAwesomeIcon icon={faArrowsUpDown} className="size-3" />
                 並べ替え
@@ -177,7 +217,7 @@ export default function FriendFieldsPage() {
                       type="checkbox"
                       checked={allCheckedInView}
                       onChange={toggleAll}
-                      disabled={filtered.length === 0}
+                      disabled={items.length === 0}
                       className="size-4 rounded border-white/30 accent-white bg-white/10"
                       aria-label="すべて選択"
                     />
@@ -188,33 +228,36 @@ export default function FriendFieldsPage() {
                   <th className="px-3 py-3 text-left font-bold text-primary-foreground">
                     管理名
                   </th>
-                  <th className="px-3 py-3 text-left font-bold text-primary-foreground w-48">
+                  <th className="px-3 py-3 text-left font-bold text-primary-foreground w-40">
                     情報タイプ
                   </th>
-                  <th className="px-3 py-3 text-left font-bold text-primary-foreground w-32">
+                  <th className="px-3 py-3 text-left font-bold text-primary-foreground w-28">
                     回答人数
+                  </th>
+                  <th className="px-3 py-3 text-left font-bold text-primary-foreground w-24">
+                    操作
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {items.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="px-3 py-6 text-sm text-center text-muted-foreground"
                     >
                       データがありません。
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((f) => {
+                  items.map((f) => {
                     const checked = selectedIds.has(f.id);
                     return (
                       <tr
                         key={f.id}
                         className={cn(
                           "border-b border-border hover:bg-muted/30",
-                          checked && "bg-primary/5"
+                          checked && "bg-primary/5",
                         )}
                       >
                         <td className="px-3 py-3">
@@ -233,6 +276,31 @@ export default function FriendFieldsPage() {
                         <td className="px-3 py-3 text-xs tabular-nums">
                           {f.answerCount}
                         </td>
+                        <td className="px-3 py-3">
+                          <div className="inline-flex items-center gap-1">
+                            <Link
+                              href={`/data-management/friend-fields/${f.id}/edit`}
+                              className="grid place-items-center size-8 rounded hover:bg-muted text-muted-foreground"
+                              aria-label="編集"
+                            >
+                              <FontAwesomeIcon
+                                icon={faPenToSquare}
+                                className="size-3.5"
+                              />
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => deleteField(f.id, f.name)}
+                              className="grid place-items-center size-8 rounded hover:bg-muted text-muted-foreground hover:text-destructive"
+                              aria-label="削除"
+                            >
+                              <FontAwesomeIcon
+                                icon={faTrash}
+                                className="size-3.5"
+                              />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })
@@ -242,6 +310,14 @@ export default function FriendFieldsPage() {
           </div>
         </section>
       </div>
+
+      <FriendFieldFolderDialog
+        open={folderDialogOpen}
+        onClose={() => setFolderDialogOpen(false)}
+        onCreated={() => {
+          mutateFolders();
+        }}
+      />
     </div>
   );
 }

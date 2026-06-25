@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -8,19 +10,27 @@ import {
   faUsers,
   faUserCheck,
   faPaperPlane,
-  faFileExport,
+  faRectangleList,
+  faFileCsv,
 } from "@fortawesome/free-solid-svg-icons";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { MOCK_FRIENDS, MOCK_TAGS, MOCK_BROADCASTS } from "@/mocks/data";
+import { fetchDataManagementStats } from "@/lib/api/data-management";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
 
 export default function DataManagementPage() {
-  const activeFriends = MOCK_FRIENDS.filter((f) => f.isFollowing).length;
-  const monthlyMessages = MOCK_BROADCASTS.reduce(
-    (s, b) => s + b.successCount,
-    0
+  const { currentChannelId } = useAuth();
+  const { data: stats } = useResource(
+    currentChannelId ? `data-management-stats:${currentChannelId}` : null,
+    () => fetchDataManagementStats(),
   );
+
+  const friendsTotal = stats?.friendsTotal ?? 0;
+  const friendsActive = stats?.friendsActive ?? 0;
+  const tags = stats?.tags ?? 0;
+  const broadcastSuccess = stats?.broadcastSuccess ?? 0;
 
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
@@ -35,36 +45,22 @@ export default function DataManagementPage() {
         <Stat
           icon={faUsers}
           label="友だち合計"
-          value={MOCK_FRIENDS.length.toLocaleString()}
+          value={friendsTotal.toLocaleString()}
         />
         <Stat
           icon={faUserCheck}
           label="アクティブ友だち"
-          value={activeFriends.toLocaleString()}
+          value={friendsActive.toLocaleString()}
         />
-        <Stat icon={faTag} label="タグ" value={MOCK_TAGS.length.toString()} />
+        <Stat icon={faTag} label="タグ" value={tags.toString()} />
         <Stat
           icon={faPaperPlane}
           label="配信成功"
-          value={monthlyMessages.toLocaleString()}
+          value={broadcastSuccess.toLocaleString()}
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <HubCard
-          href="/friends"
-          icon={faAddressBook}
-          title="友だち一覧"
-          description="登録された友だちの検索・フィルタ・タグ付与"
-          subStat={`${MOCK_FRIENDS.length} 名が登録中`}
-        />
-        <HubCard
-          href="/tags"
-          icon={faTag}
-          title="タグ管理"
-          description="タグの作成・編集・削除と色の管理"
-          subStat={`${MOCK_TAGS.length} 件のタグ`}
-        />
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <HubCard
           href="/dashboard"
           icon={faChartLine}
@@ -72,28 +68,48 @@ export default function DataManagementPage() {
           description="友だち増減・配信数の推移グラフを確認"
           subStat="直近 30 日のサマリ"
         />
+        <HubCard
+          href="/friends"
+          icon={faAddressBook}
+          title="友だち一覧"
+          description="登録された友だちの検索・フィルタ・タグ付与"
+          subStat={`${friendsTotal} 名が登録中`}
+        />
+        <HubCard
+          href="/tags"
+          icon={faTag}
+          title="タグ管理"
+          description="タグの作成・編集・削除と色の管理"
+          subStat={`${tags} 件のタグ`}
+        />
+        <HubCard
+          href="/data-management/friend-fields"
+          icon={faRectangleList}
+          title="友だち情報管理"
+          description="友だち情報ページや1:1チャットに表示する独自項目を追加"
+          subStat="カスタム項目の管理"
+        />
       </div>
 
-      <Card className="p-4">
-        <CardContent className="p-0 flex items-center gap-4">
-          <div className="grid place-items-center size-10 rounded-xl bg-primary/10 text-primary shrink-0">
-            <FontAwesomeIcon icon={faFileExport} className="size-4" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium">データエクスポート</div>
-            <div className="text-xs text-muted-foreground mt-0.5">
-              友だち・タグ・配信ログを CSV でダウンロード（モック）
+      <Link href="/data-management/csv" className="block">
+        <Card className="p-4 transition-colors hover:border-primary/40 hover:bg-muted/40">
+          <CardContent className="p-0 flex items-center gap-4">
+            <div className="grid place-items-center size-10 rounded-xl bg-primary/10 text-primary shrink-0">
+              <FontAwesomeIcon icon={faFileCsv} className="size-4" />
             </div>
-          </div>
-          <button
-            type="button"
-            className="text-xs text-primary hover:underline flex items-center gap-1"
-          >
-            エクスポート画面へ
-            <FontAwesomeIcon icon={faArrowRight} className="size-3" />
-          </button>
-        </CardContent>
-      </Card>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium">CSV管理</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                友だち・タグ・友だち情報を CSV でエクスポート / インポート
+              </div>
+            </div>
+            <span className="text-xs text-primary flex items-center gap-1">
+              CSV管理画面へ
+              <FontAwesomeIcon icon={faArrowRight} className="size-3" />
+            </span>
+          </CardContent>
+        </Card>
+      </Link>
     </div>
   );
 }

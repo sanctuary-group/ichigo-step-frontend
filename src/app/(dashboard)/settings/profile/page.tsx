@@ -5,6 +5,8 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faRightFromBracket,
   faTriangleExclamation,
+  faCircleCheck,
+  faCircleExclamation,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -24,31 +26,54 @@ export default function ProfileSettingsPage() {
   // 編集中は draft、未編集なら取得値を表示（setState-in-effect を避ける）。
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [emailDraft, setEmailDraft] = useState<string | null>(null);
+  const [companyDraft, setCompanyDraft] = useState<string | null>(null);
+  const [phoneDraft, setPhoneDraft] = useState<string | null>(null);
+
   const name = nameDraft ?? profile?.name ?? user?.name ?? "";
   const email = emailDraft ?? profile?.email ?? user?.email ?? "";
-  const setName = (v: string) => setNameDraft(v);
-  const setEmail = (v: string) => setEmailDraft(v);
+  const company = companyDraft ?? profile?.company ?? "";
+  const phone = phoneDraft ?? profile?.phone ?? "";
+  const emailVerified = profile?.email_verified ?? false;
 
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
+  const [profileErrors, setProfileErrors] = useState<Record<string, string>>(
+    {},
+  );
 
   const [curPw, setCurPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confPw, setConfPw] = useState("");
   const [savingPw, setSavingPw] = useState(false);
   const [pwMsg, setPwMsg] = useState<string | null>(null);
+  const [pwErrors, setPwErrors] = useState<Record<string, string>>({});
+
+  const dirty =
+    nameDraft !== null ||
+    emailDraft !== null ||
+    companyDraft !== null ||
+    phoneDraft !== null;
 
   async function handleSaveProfile() {
     setSavingProfile(true);
     setProfileMsg(null);
+    setProfileErrors({});
     try {
-      await updateProfile({ name, email });
+      await updateProfile({
+        name,
+        email,
+        company: company || null,
+        phone: phone || null,
+      });
       setNameDraft(null);
       setEmailDraft(null);
+      setCompanyDraft(null);
+      setPhoneDraft(null);
       mutate();
       refresh();
       setProfileMsg("保存しました");
     } catch (e) {
+      if (e instanceof ApiError) setProfileErrors(e.fieldErrors());
       setProfileMsg(e instanceof ApiError ? e.message : "保存に失敗しました");
     } finally {
       setSavingProfile(false);
@@ -58,12 +83,16 @@ export default function ProfileSettingsPage() {
   function handleCancelProfile() {
     setNameDraft(null);
     setEmailDraft(null);
+    setCompanyDraft(null);
+    setPhoneDraft(null);
     setProfileMsg(null);
+    setProfileErrors({});
   }
 
   async function handleUpdatePassword() {
     setSavingPw(true);
     setPwMsg(null);
+    setPwErrors({});
     try {
       await updatePassword({
         current_password: curPw,
@@ -75,6 +104,7 @@ export default function ProfileSettingsPage() {
       setConfPw("");
       setPwMsg("パスワードを更新しました");
     } catch (e) {
+      if (e instanceof ApiError) setPwErrors(e.fieldErrors());
       setPwMsg(e instanceof ApiError ? e.message : "更新に失敗しました");
     } finally {
       setSavingPw(false);
@@ -98,12 +128,12 @@ export default function ProfileSettingsPage() {
           <div className="flex items-center gap-4">
             <Avatar className="size-16">
               <AvatarFallback className="text-xl">
-                {name.slice(0, 1)}
+                {name.slice(0, 1) || "U"}
               </AvatarFallback>
             </Avatar>
             <div className="space-y-1">
-              <Button variant="outline" size="sm" disabled>
-                画像を変更（モック）
+              <Button type="button" variant="outline" size="sm" disabled>
+                画像を変更
               </Button>
               <div className="text-[11px] text-muted-foreground">
                 推奨: 正方形 PNG/JPG 512px 以上
@@ -112,34 +142,82 @@ export default function ProfileSettingsPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="name">表示名</Label>
+            <Field id="name" label="表示名" error={profileErrors.name}>
               <Input
                 id="name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => setNameDraft(e.target.value)}
+                maxLength={50}
               />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="email">メールアドレス</Label>
+            </Field>
+            <Field
+              id="email"
+              label="メールアドレス"
+              error={profileErrors.email}
+            >
               <Input
                 id="email"
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => setEmailDraft(e.target.value)}
               />
-            </div>
+              {emailVerified ? (
+                <p className="text-[11px] text-primary flex items-center gap-1">
+                  <FontAwesomeIcon icon={faCircleCheck} className="size-3" />
+                  確認済み
+                </p>
+              ) : (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <FontAwesomeIcon
+                    icon={faCircleExclamation}
+                    className="size-3"
+                  />
+                  未確認
+                </p>
+              )}
+            </Field>
+            <Field id="company" label="会社名・屋号" error={profileErrors.company}>
+              <Input
+                id="company"
+                value={company}
+                onChange={(e) => setCompanyDraft(e.target.value)}
+                maxLength={100}
+              />
+            </Field>
+            <Field
+              id="phone"
+              label="電話番号（ハイフンなし）"
+              error={profileErrors.phone}
+            >
+              <Input
+                id="phone"
+                value={phone}
+                onChange={(e) => setPhoneDraft(e.target.value)}
+                inputMode="numeric"
+                placeholder="09012345678"
+              />
+            </Field>
           </div>
 
           <div className="flex items-center justify-end gap-2">
             {profileMsg && (
-              <span className="text-xs text-muted-foreground mr-auto">{profileMsg}</span>
+              <span className="text-xs text-muted-foreground mr-auto">
+                {profileMsg}
+              </span>
             )}
-            <Button variant="outline" onClick={handleCancelProfile} disabled={savingProfile}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCancelProfile}
+              disabled={!dirty || savingProfile}
+            >
               キャンセル
             </Button>
-            <Button onClick={handleSaveProfile} disabled={savingProfile}>
-              {savingProfile ? "保存中…" : "保存"}
+            <Button
+              onClick={handleSaveProfile}
+              disabled={!dirty || savingProfile}
+            >
+              {savingProfile ? "保存中..." : "保存"}
             </Button>
           </div>
         </CardContent>
@@ -151,43 +229,52 @@ export default function ProfileSettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="cur">現在のパスワード</Label>
+            <Field
+              id="cur"
+              label="現在のパスワード"
+              error={pwErrors.current_password}
+            >
               <Input
                 id="cur"
                 type="password"
                 value={curPw}
                 onChange={(e) => setCurPw(e.target.value)}
+                autoComplete="current-password"
               />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="new">新しいパスワード</Label>
+            </Field>
+            <Field id="new" label="新しいパスワード" error={pwErrors.password}>
               <Input
                 id="new"
                 type="password"
                 value={newPw}
                 onChange={(e) => setNewPw(e.target.value)}
+                autoComplete="new-password"
               />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="conf">確認用</Label>
+            </Field>
+            <Field id="conf" label="確認用">
               <Input
                 id="conf"
                 type="password"
                 value={confPw}
                 onChange={(e) => setConfPw(e.target.value)}
+                autoComplete="new-password"
               />
-            </div>
+            </Field>
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            英大文字・小文字・数字・記号をそれぞれ1文字以上含む6〜12文字
+          </p>
           <div className="flex items-center justify-end gap-2">
             {pwMsg && (
-              <span className="text-xs text-muted-foreground mr-auto">{pwMsg}</span>
+              <span className="text-xs text-muted-foreground mr-auto">
+                {pwMsg}
+              </span>
             )}
             <Button
               onClick={handleUpdatePassword}
-              disabled={savingPw || !curPw || !newPw || !confPw}
+              disabled={savingPw || !curPw || !newPw}
             >
-              {savingPw ? "更新中…" : "パスワードを更新"}
+              {savingPw ? "更新中..." : "パスワードを更新"}
             </Button>
           </div>
         </CardContent>
@@ -199,10 +286,7 @@ export default function ProfileSettingsPage() {
         </CardHeader>
         <CardContent>
           <Button variant="outline" onClick={() => logout()}>
-            <FontAwesomeIcon
-              icon={faRightFromBracket}
-              className="size-3.5"
-            />
+            <FontAwesomeIcon icon={faRightFromBracket} className="size-3.5" />
             このブラウザからログアウト
           </Button>
         </CardContent>
@@ -224,6 +308,26 @@ export default function ProfileSettingsPage() {
           </Button>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function Field({
+  id,
+  label,
+  error,
+  children,
+}: {
+  id: string;
+  label: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      {children}
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }
