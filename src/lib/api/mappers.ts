@@ -113,6 +113,8 @@ export function mapBroadcast(api: ApiBroadcast): MockBroadcast {
     updatedAt: api.updated_at ?? "",
     totalCount: api.total_count ?? 0,
     successCount: api.success_count ?? 0,
+    lineChannelName: api.line_channel?.name ?? undefined,
+    actionsCount: Array.isArray(api.actions) ? api.actions.length : 0,
   };
 }
 

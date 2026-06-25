@@ -1,5 +1,6 @@
 import { apiFetch } from "./client";
 import { mapQrAction } from "./mappers";
+import { API_ORIGIN } from "./config";
 import type { ApiQrAction } from "./types";
 import type { MockQrAction } from "@/mocks/data";
 import type { QrAction } from "@/types/qr-action";
@@ -10,6 +11,30 @@ export type RawQrAction = QrAction & { public_url?: string; image_url?: string }
 /** GET /qr-actions/{id} （編集フォーム用に raw な snake_case 形状を返す） */
 export async function fetchRawQrAction(id: number | string): Promise<RawQrAction> {
   return apiFetch<RawQrAction>(`/qr-actions/${id}`);
+}
+
+/**
+ * 一覧画面用の raw な QrAction 一覧。
+ * QRコード公開URL / 画像URL は backend Resource に含まれないため token から導出する
+ * （旧 monolith: public_url = {base}/qr/{token}, image_url = /qr/{token}/image）。
+ */
+export async function fetchQrActionList(
+  params: { folder?: string; q?: string } = {},
+): Promise<QrAction[]> {
+  const data = await apiFetch<QrAction[]>("/qr-actions", {
+    query: { folder: params.folder, q: params.q },
+  });
+  return data.map((q) => ({
+    ...q,
+    public_url: q.token ? `${API_ORIGIN}/qr/${q.token}` : "",
+    image_url: q.token ? `${API_ORIGIN}/qr/${q.token}/image` : undefined,
+    account_name: q.line_channel?.name ?? q.account_name ?? null,
+  }));
+}
+
+/** DELETE /qr-actions/{id} （単体削除） */
+export async function deleteQrAction(id: number | string): Promise<void> {
+  await apiFetch(`/qr-actions/${id}`, { method: "DELETE" });
 }
 
 /** GET /qr-actions */

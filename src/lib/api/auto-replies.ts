@@ -17,6 +17,18 @@ export async function fetchAutoReplies(params: { folder?: string } = {}): Promis
   return data.map(mapAutoReply);
 }
 
+/**
+ * GET /auto-replies — 一覧画面の要約整形（keywordSummary/scheduleSummary）に
+ * 必要な構造化フィールドを保ったまま生レコードを返す。
+ */
+export async function fetchAutoRepliesRaw(
+  params: { folder?: string } = {},
+): Promise<ApiAutoReply[]> {
+  return apiFetch<ApiAutoReply[]>("/auto-replies", {
+    query: { folder: params.folder },
+  });
+}
+
 /** POST /auto-replies */
 export async function createAutoReply(input: {
   auto_reply_folder_id: number;

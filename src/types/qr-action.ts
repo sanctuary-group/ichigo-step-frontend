@@ -54,6 +54,7 @@ export type QrAction = {
     public_url?: string;
     image_url?: string;
     account_name?: string | null;
+    line_channel?: { id: number; name: string } | null;
     action_tag?: { id: number; name: string; color: string } | null;
     action_scenario?: { id: number; name: string } | null;
     created_at: string;

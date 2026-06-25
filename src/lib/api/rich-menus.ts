@@ -13,9 +13,21 @@ function deriveImageUrl(imagePath: string | null | undefined): string | null {
   return `${API_ORIGIN}/storage/${imagePath.replace(/^\/+/, "")}`;
 }
 
-/** GET /rich-menus */
-export async function fetchRichMenus(): Promise<RichMenu[]> {
-  return apiFetch<RichMenu[]>("/rich-menus");
+/** GET /rich-menus（folder / q フィルタ対応）。Resource は image_url を返さないため補完する。 */
+export async function fetchRichMenus(params?: {
+  folder?: number | string | null;
+  q?: string;
+}): Promise<RichMenu[]> {
+  const data = await apiFetch<RichMenu[]>("/rich-menus", {
+    query: {
+      folder: params?.folder ?? undefined,
+      q: params?.q || undefined,
+    },
+  });
+  return data.map((m) => ({
+    ...m,
+    image_url: m.image_url ?? deriveImageUrl(m.image_path),
+  }));
 }
 
 /** GET /rich-menus/{id} */
@@ -60,4 +72,30 @@ export async function publishRichMenu(id: number | string): Promise<RichMenu> {
 /** POST /rich-menus/{id}/unpublish */
 export async function unpublishRichMenu(id: number | string): Promise<RichMenu> {
   return apiFetch<RichMenu>(`/rich-menus/${id}/unpublish`, { method: "POST" });
+}
+
+/** DELETE /rich-menus/{id}（公開中は LINE 取り下げ・画像削除込み）。 */
+export async function deleteRichMenu(id: number | string): Promise<void> {
+  await apiFetch(`/rich-menus/${id}`, { method: "DELETE" });
+}
+
+/** POST /rich-menus/bulk-delete */
+export async function bulkDeleteRichMenus(
+  ids: (number | string)[],
+): Promise<{ deleted: number }> {
+  return apiFetch<{ deleted: number }>("/rich-menus/bulk-delete", {
+    method: "POST",
+    body: { ids },
+  });
+}
+
+/** POST /rich-menus/bulk-move */
+export async function bulkMoveRichMenus(
+  ids: (number | string)[],
+  folderId: number | string,
+): Promise<{ moved: number }> {
+  return apiFetch<{ moved: number }>("/rich-menus/bulk-move", {
+    method: "POST",
+    body: { ids, folder_id: Number(folderId) },
+  });
 }

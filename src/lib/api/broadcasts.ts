@@ -26,3 +26,16 @@ export async function fetchBroadcast(id: string): Promise<MockBroadcast> {
 export async function deleteBroadcast(id: string): Promise<void> {
   await apiFetch(`/broadcasts/${id}`, { method: "DELETE" });
 }
+
+/** POST /broadcasts/{id}/send-now （即時配信開始：draft/scheduled のみ） */
+export async function sendBroadcastNow(id: string): Promise<void> {
+  await apiFetch(`/broadcasts/${id}/send-now`, { method: "POST", body: {} });
+}
+
+/** POST /broadcasts/bulk-delete */
+export async function bulkDeleteBroadcasts(ids: string[]): Promise<void> {
+  await apiFetch("/broadcasts/bulk-delete", {
+    method: "POST",
+    body: { ids: ids.map((id) => Number(id)) },
+  });
+}

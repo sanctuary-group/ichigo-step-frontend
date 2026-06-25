@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faPlus,
@@ -11,61 +12,131 @@ import {
   faTrashCan,
   faFolderTree,
   faEyeSlash,
-  faFileLines,
+  faUpRightFromSquare,
+  faCopy,
+  faChartSimple,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MOCK_FORM_FOLDERS } from "@/mocks/data";
 import { cn } from "@/lib/utils";
-import { fetchForms, bulkDeleteForms } from "@/lib/api/forms";
+import { fetchForms, bulkDeleteForms, deleteForm } from "@/lib/api/forms";
+import {
+  fetchFolders,
+  deleteFolder as deleteFolderApi,
+  type Folder,
+} from "@/lib/api/folders";
 import { useResource } from "@/lib/api/use-resource";
 import { useAuth } from "@/lib/auth/auth-context";
-
-// フォルダ一覧APIが無いため、取得分はすべて既定フォルダ配下に表示。
-const DEFAULT_FOLDER_ID = "fmf_default";
+import type { MockForm } from "@/mocks/data";
+import { FolderDialog } from "@/components/forms/folder-dialog";
+import { CreateDialog } from "@/components/forms/create-dialog";
 
 export default function FormsPage() {
   const { currentChannelId } = useAuth();
-  const [selectedFolderId, setSelectedFolderId] = useState<string>(DEFAULT_FOLDER_ID);
   const [query, setQuery] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [folderVisible, setFolderVisible] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const { data: folders, mutate: mutateFolders } = useResource(
+    currentChannelId ? `form-folders:${currentChannelId}` : null,
+    () => fetchFolders("form-folders"),
+  );
+  const folderList = useMemo(() => folders ?? [], [folders]);
+
+  // 既定の選択フォルダ（先頭フォルダ）を初期化。
+  useEffect(() => {
+    if (selectedFolderId === null && folderList.length > 0) {
+      setSelectedFolderId(folderList[0].id);
+    }
+  }, [folderList, selectedFolderId]);
 
   const { data: forms, mutate } = useResource(
-    currentChannelId ? `forms:${currentChannelId}:${query.trim()}` : null,
-    () => fetchForms({ q: query.trim() || undefined }),
+    currentChannelId
+      ? `forms:${currentChannelId}:${selectedFolderId ?? ""}:${appliedQuery}`
+      : null,
+    () =>
+      fetchForms({
+        folder: selectedFolderId ?? undefined,
+        q: appliedQuery || undefined,
+      }),
   );
-  const allItems = useMemo(() => forms ?? [], [forms]);
+  const rows = useMemo(() => forms ?? [], [forms]);
 
-  const folderCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    map.set(DEFAULT_FOLDER_ID, allItems.length);
-    return map;
-  }, [allItems]);
+  const refresh = () => {
+    mutate();
+    mutateFolders();
+  };
 
-  const filtered = useMemo(
-    () => (selectedFolderId === DEFAULT_FOLDER_ID ? allItems : []),
-    [selectedFolderId, allItems],
-  );
+  const onSearch = (e: FormEvent) => {
+    e.preventDefault();
+    setAppliedQuery(query.trim());
+  };
 
-  async function handleBulkDelete() {
+  const selectFolder = (id: string) => {
+    setSelectedFolderId(id);
+    setSelectedIds(new Set());
+  };
+
+  const handleDeleteForm = async (f: MockForm) => {
+    if (!confirm(`「${f.name}」を削除しますか？回答データも削除されます。`)) return;
+    await deleteForm(f.id);
+    refresh();
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (
+      !confirm(
+        `${selectedIds.size}件のフォームを削除しますか？回答データも削除されます。`,
+      )
+    )
+      return;
     await bulkDeleteForms([...selectedIds]);
     setSelectedIds(new Set());
-    mutate();
-  }
+    refresh();
+  };
+
+  const handleDeleteFolder = async (f: Folder) => {
+    if (f.isSystem) return;
+    const count = f.itemsCount ?? 0;
+    const msg =
+      count > 0
+        ? `「${f.name}」を削除します。${count} 件のフォームも一緒に削除されます。`
+        : `「${f.name}」を削除しますか？`;
+    if (!confirm(msg)) return;
+    await deleteFolderApi("form-folders", f.id);
+    if (selectedFolderId === f.id) setSelectedFolderId(folderList[0]?.id ?? null);
+    refresh();
+  };
+
+  const copyUrl = async (f: MockForm) => {
+    if (!f.distributionUrl) return;
+    try {
+      await navigator.clipboard.writeText(f.distributionUrl);
+      setCopiedId(f.id);
+      setTimeout(() => setCopiedId(null), 1500);
+    } catch {
+      /* noop */
+    }
+  };
 
   const allCheckedInView =
-    filtered.length > 0 && filtered.every((f) => selectedIds.has(f.id));
+    rows.length > 0 && rows.every((f) => selectedIds.has(f.id));
 
   const toggleAll = () => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (allCheckedInView) {
-        for (const f of filtered) next.delete(f.id);
+        for (const f of rows) next.delete(f.id);
       } else {
-        for (const f of filtered) next.add(f.id);
+        for (const f of rows) next.add(f.id);
       }
       return next;
     });
@@ -92,35 +163,53 @@ export default function FormsPage() {
         {folderVisible && (
           <aside className="w-full md:w-56 shrink-0 border-b md:border-b-0 md:border-r border-border flex flex-col max-h-[40vh] md:max-h-none">
             <div className="flex items-center gap-2 px-3 py-3 border-b border-border">
-              <Button variant="outline" size="sm" className="flex-1 h-9 px-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 h-9 px-2"
+                onClick={() => setFolderDialogOpen(true)}
+              >
                 <FontAwesomeIcon icon={faFolderPlus} className="size-3" />
                 フォルダ追加
               </Button>
-              <Button variant="outline" size="sm" className="flex-1 h-9 px-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 h-9 px-2"
+                disabled
+              >
                 <FontAwesomeIcon icon={faArrowsUpDown} className="size-3" />
                 並べ替え
               </Button>
             </div>
             <ul className="flex-1 overflow-y-auto p-2 space-y-1">
-              {MOCK_FORM_FOLDERS.map((f) => {
+              {folderList.map((f) => {
                 const active = f.id === selectedFolderId;
-                const count = folderCounts.get(f.id) ?? 0;
                 return (
-                  <li key={f.id}>
+                  <li key={f.id} className="group flex items-center gap-1">
                     <button
-                      onClick={() => {
-                        setSelectedFolderId(f.id);
-                        setSelectedIds(new Set());
-                      }}
+                      onClick={() => selectFolder(f.id)}
                       className={cn(
-                        "w-full text-left px-3 py-2 rounded-md text-sm transition-colors",
+                        "flex-1 text-left px-3 py-2 rounded-md text-sm transition-colors min-w-0 flex items-center justify-between gap-2",
                         active
                           ? "bg-muted text-foreground"
-                          : "text-foreground hover:bg-muted/50"
+                          : "text-foreground hover:bg-muted/50",
                       )}
                     >
-                      {f.name} ({count})
+                      <span className="truncate">{f.name}</span>
+                      <span className="text-muted-foreground text-xs tabular-nums">
+                        ({f.itemsCount ?? 0})
+                      </span>
                     </button>
+                    {!f.isSystem && (
+                      <button
+                        onClick={() => handleDeleteFolder(f)}
+                        className="grid place-items-center size-7 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label="削除"
+                      >
+                        <FontAwesomeIcon icon={faTrashCan} className="size-3" />
+                      </button>
+                    )}
                   </li>
                 );
               })}
@@ -139,14 +228,14 @@ export default function FormsPage() {
         <section className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-border flex-wrap">
             <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                className="h-9 bg-blue-500 hover:bg-blue-600 text-white"
+              <button
+                onClick={() => setCreateOpen(true)}
+                className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
               >
                 <FontAwesomeIcon icon={faPlus} className="size-3" />
                 新規作成
-              </Button>
-              <Button variant="outline" size="sm" className="h-9">
+              </button>
+              <Button variant="outline" size="sm" className="h-9" disabled>
                 <FontAwesomeIcon icon={faArrowsUpDown} className="size-3" />
                 並べ替え
               </Button>
@@ -163,16 +252,8 @@ export default function FormsPage() {
                   フォルダを表示
                 </Button>
               )}
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-950/50"
-              >
-                <FontAwesomeIcon icon={faFileLines} className="size-3.5" />
-                未連携
-              </Button>
               {searchOpen ? (
-                <div className="relative w-64">
+                <form onSubmit={onSearch} className="relative w-64">
                   <FontAwesomeIcon
                     icon={faMagnifyingGlass}
                     className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
@@ -182,12 +263,10 @@ export default function FormsPage() {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     autoFocus
-                    onBlur={() => {
-                      if (!query) setSearchOpen(false);
-                    }}
+                    onBlur={() => !query && setSearchOpen(false)}
                     className="pl-9 h-9"
                   />
-                </div>
+                </form>
               ) : (
                 <Button
                   variant="ghost"
@@ -214,7 +293,7 @@ export default function FormsPage() {
                       type="checkbox"
                       checked={allCheckedInView}
                       onChange={toggleAll}
-                      disabled={filtered.length === 0}
+                      disabled={rows.length === 0}
                       className="size-4 rounded border-border accent-primary"
                       aria-label="すべて選択"
                     />
@@ -229,33 +308,35 @@ export default function FormsPage() {
                   <SortableHeader label="タイプ" className="w-24" />
                   <SortableHeader label="作成日" className="w-32" />
                   <SortableHeader label="最終編集日" className="w-32" />
-                  <th className="px-3 py-2 text-left font-bold text-foreground w-28">
+                  <th className="px-3 py-2 text-left font-bold text-foreground w-24">
                     クイックテスト
                   </th>
-                  <th className="px-3 py-2 text-left font-bold text-foreground w-28">
+                  <th className="px-3 py-2 text-left font-bold text-foreground w-24">
                     回答情報
                   </th>
+                  <th className="px-3 py-2 text-left font-bold text-foreground w-16" />
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {rows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={10}
                       className="px-3 py-12 text-sm text-center text-muted-foreground"
                     >
                       フォームが登録されていません。
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((f) => {
+                  rows.map((f) => {
                     const checked = selectedIds.has(f.id);
+                    const published = f.status === "published";
                     return (
                       <tr
                         key={f.id}
                         className={cn(
                           "border-b border-border hover:bg-muted/30",
-                          checked && "bg-primary/5"
+                          checked && "bg-primary/5",
                         )}
                       >
                         <td className="px-3 py-3">
@@ -267,26 +348,98 @@ export default function FormsPage() {
                           />
                         </td>
                         <td className="px-3 py-3 text-xs">
-                          {f.status === "published"
-                            ? "公開中"
-                            : f.status === "draft"
-                              ? "下書き"
-                              : "終了"}
+                          <StatusBadge status={f.status} />
                         </td>
-                        <td className="px-3 py-3 font-medium">{f.name}</td>
-                        <td className="px-3 py-3 text-xs text-muted-foreground truncate max-w-[280px]">
-                          {f.distributionUrl}
+                        <td className="px-3 py-3 font-medium">
+                          <Link
+                            href={`/forms/${f.id}/edit`}
+                            className="hover:underline"
+                          >
+                            {f.name}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-3 text-xs text-muted-foreground">
+                          {published && f.distributionUrl ? (
+                            <div className="flex items-center gap-2 max-w-[280px]">
+                              <span className="truncate">
+                                {f.distributionUrl}
+                              </span>
+                              <button
+                                onClick={() => copyUrl(f)}
+                                className="shrink-0 text-muted-foreground hover:text-foreground"
+                                aria-label="URLをコピー"
+                              >
+                                <FontAwesomeIcon
+                                  icon={faCopy}
+                                  className="size-3"
+                                />
+                              </button>
+                              {copiedId === f.id && (
+                                <span className="text-emerald-600 dark:text-emerald-400 shrink-0">
+                                  コピー済
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground/60">
+                              公開後に発行
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-3 text-xs">{f.formType}</td>
                         <td className="px-3 py-3 text-xs text-muted-foreground tabular-nums">
-                          {f.createdAt.slice(0, 10).replace(/-/g, "/")}
+                          {f.createdAt
+                            ? f.createdAt.slice(0, 10).replace(/-/g, "/")
+                            : "—"}
                         </td>
                         <td className="px-3 py-3 text-xs text-muted-foreground tabular-nums">
-                          {f.updatedAt.slice(0, 10).replace(/-/g, "/")}
+                          {f.updatedAt
+                            ? f.updatedAt.slice(0, 10).replace(/-/g, "/")
+                            : "—"}
                         </td>
-                        <td className="px-3 py-3"></td>
-                        <td className="px-3 py-3 text-xs tabular-nums">
-                          {f.responseCount}
+                        <td className="px-3 py-3">
+                          {published && f.distributionUrl ? (
+                            <a
+                              href={f.distributionUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center justify-center size-8 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
+                              aria-label="回答ページを開く"
+                            >
+                              <FontAwesomeIcon
+                                icon={faUpRightFromSquare}
+                                className="size-3.5"
+                              />
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground/50 text-xs">
+                              —
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-xs">
+                          <Link
+                            href={`/forms/${f.id}/responses`}
+                            className="inline-flex items-center gap-1.5 text-foreground hover:underline tabular-nums"
+                          >
+                            <FontAwesomeIcon
+                              icon={faChartSimple}
+                              className="size-3 text-muted-foreground"
+                            />
+                            {f.responseCount}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-3">
+                          <button
+                            onClick={() => handleDeleteForm(f)}
+                            className="grid place-items-center size-7 rounded text-muted-foreground hover:text-destructive"
+                            aria-label="削除"
+                          >
+                            <FontAwesomeIcon
+                              icon={faTrashCan}
+                              className="size-3.5"
+                            />
+                          </button>
                         </td>
                       </tr>
                     );
@@ -311,22 +464,43 @@ export default function FormsPage() {
               size="sm"
               disabled={selectionCount === 0}
               onClick={handleBulkDelete}
-              className="h-9 disabled:opacity-50"
+              className="h-9 disabled:opacity-50 text-destructive hover:text-destructive"
             >
               <FontAwesomeIcon icon={faTrashCan} className="size-3.5" />
               一括削除
             </Button>
-            <a
-              href="#"
-              className="text-sm text-foreground underline hover:no-underline ml-2"
-            >
-              削除したフォーム
-            </a>
+            <span className="text-xs text-muted-foreground tabular-nums ml-auto">
+              全 {rows.length} 件
+            </span>
           </div>
         </section>
       </div>
+
+      <FolderDialog
+        open={folderDialogOpen}
+        onClose={() => setFolderDialogOpen(false)}
+        onCreated={refresh}
+      />
+      <CreateDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        folders={folderList}
+        defaultFolderId={selectedFolderId ?? folderList[0]?.id ?? null}
+      />
     </div>
   );
+}
+
+function StatusBadge({ status }: { status: MockForm["status"] }) {
+  if (status === "published")
+    return (
+      <span className="font-bold text-emerald-600 dark:text-emerald-400">
+        公開中
+      </span>
+    );
+  if (status === "closed")
+    return <span className="text-muted-foreground">終了</span>;
+  return <span className="text-muted-foreground">下書き</span>;
 }
 
 function SortableHeader({
@@ -339,8 +513,8 @@ function SortableHeader({
   return (
     <th
       className={cn(
-        "px-3 py-2 text-left font-bold text-foreground cursor-pointer hover:text-primary",
-        className
+        "px-3 py-2 text-left font-bold text-foreground",
+        className,
       )}
     >
       <span className="inline-flex items-center gap-1">

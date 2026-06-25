@@ -6,25 +6,23 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faPlus,
   faTrash,
-  faBookOpen,
   faSort,
   faPenToSquare,
+  faPaperPlane,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { TagBadge } from "@/components/tag-badge";
 import { BroadcastStatusBadge } from "@/components/broadcasts/status-badge";
-import { type MockBroadcast } from "@/mocks/data";
+import { type MockBroadcast, type MockTag } from "@/mocks/data";
 import { cn } from "@/lib/utils";
-import { fetchBroadcasts, deleteBroadcast } from "@/lib/api/broadcasts";
+import {
+  fetchBroadcasts,
+  deleteBroadcast,
+  sendBroadcastNow,
+  bulkDeleteBroadcasts,
+} from "@/lib/api/broadcasts";
 import { fetchTags } from "@/lib/api/tags";
 import { useResource } from "@/lib/api/use-resource";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -53,7 +51,6 @@ export default function BroadcastsPage() {
   const [allPeriod, setAllPeriod] = useState(true);
   const [yearMonth, setYearMonth] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [pageSize, setPageSize] = useState("100");
 
   const month = !allPeriod && yearMonth ? yearMonth : undefined;
   const { data: broadcasts, mutate } = useResource(
@@ -71,18 +68,27 @@ export default function BroadcastsPage() {
   // サーバ側で tab/month による絞込み・並べ替え済み。
   const items = broadcasts ?? [];
 
-  async function handleDelete(id: string) {
-    await deleteBroadcast(id);
+  async function handleDelete(b: MockBroadcast) {
+    if (!confirm(`「${b.title}」を削除しますか？`)) return;
+    await deleteBroadcast(b.id);
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      next.delete(id);
+      next.delete(b.id);
       return next;
     });
     mutate();
   }
 
+  async function handleSendNow(b: MockBroadcast) {
+    if (!confirm(`「${b.title}」を今すぐ配信しますか？`)) return;
+    await sendBroadcastNow(b.id);
+    mutate();
+  }
+
   async function handleBulkDelete() {
-    await Promise.all([...selectedIds].map((id) => deleteBroadcast(id)));
+    if (selectedIds.size === 0) return;
+    if (!confirm(`${selectedIds.size}件の配信を削除しますか？`)) return;
+    await bulkDeleteBroadcasts([...selectedIds]);
     setSelectedIds(new Set());
     mutate();
   }
@@ -115,6 +121,8 @@ export default function BroadcastsPage() {
   const handleTabChange = (id: TabId) => {
     setActiveTab(id);
     setSelectedIds(new Set());
+    setAllPeriod(true);
+    setYearMonth("");
   };
 
   const emptyMessage = {
@@ -125,7 +133,7 @@ export default function BroadcastsPage() {
 
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-5">
-      {/* タイトル + マニュアル */}
+      {/* タイトル */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">メッセージ配信</h1>
@@ -133,10 +141,6 @@ export default function BroadcastsPage() {
             通信状況により配信予定時間から5~15分遅れて配信される場合があります。
           </p>
         </div>
-        <Button variant="outline">
-          <FontAwesomeIcon icon={faBookOpen} className="size-3.5" />
-          マニュアル
-        </Button>
       </div>
 
       {/* タブ */}
@@ -162,51 +166,9 @@ export default function BroadcastsPage() {
         </nav>
       </div>
 
-      {/* アクション行 */}
-      {activeTab === "history" ? (
-        <div className="flex items-center gap-3 flex-wrap">
-          <Input
-            type="month"
-            placeholder="----年--月"
-            value={yearMonth}
-            onChange={(e) => {
-              setYearMonth(e.target.value);
-              if (e.target.value) setAllPeriod(false);
-            }}
-            className="w-40 h-10"
-          />
-          <button
-            onClick={() => {
-              setAllPeriod(true);
-              setYearMonth("");
-            }}
-            className={cn(
-              "h-10 px-6 rounded-md text-sm font-medium transition-colors border",
-              allPeriod
-                ? "bg-background text-foreground border-border"
-                : "bg-background text-muted-foreground border-border hover:border-primary/40"
-            )}
-          >
-            全期間
-          </button>
-
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-sm font-bold text-foreground">表示件数:</span>
-            <Select value={pageSize} onValueChange={(v) => v && setPageSize(v)}>
-              <SelectTrigger className="w-28 h-10">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="25">25件</SelectItem>
-                <SelectItem value="50">50件</SelectItem>
-                <SelectItem value="100">100件</SelectItem>
-                <SelectItem value="200">200件</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-3 flex-wrap">
+      {/* ツールバー */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {activeTab !== "history" && (
           <Link
             href="/broadcasts/new"
             className="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-md text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
@@ -214,51 +176,48 @@ export default function BroadcastsPage() {
             <FontAwesomeIcon icon={faPlus} className="size-3" />
             新規作成
           </Link>
-
-          {activeTab !== "draft" && (
-            <>
-              <button
-                onClick={() => setAllPeriod(true)}
-                className={cn(
-                  "h-10 px-6 rounded-md text-sm font-medium transition-colors border",
-                  allPeriod
-                    ? "bg-background text-foreground border-border"
-                    : "bg-background text-muted-foreground border-border hover:border-primary/40"
-                )}
-              >
-                全期間
-              </button>
-              <Input
-                type="month"
-                placeholder="----年--月"
-                value={yearMonth}
-                onChange={(e) => {
-                  setYearMonth(e.target.value);
-                  if (e.target.value) setAllPeriod(false);
-                }}
-                className="w-40 h-10"
-              />
-            </>
+        )}
+        <Button
+          variant={!allPeriod ? "outline" : "default"}
+          className={cn(
+            "h-10",
+            allPeriod && "bg-muted text-foreground hover:bg-muted"
           )}
-
-          <span className="text-xs text-muted-foreground">
-            {activeTab === "draft"
-              ? "配信予定日時が現在日時より前の場合でも、下書きの場合は配信されません。"
-              : "※配信日時5分前から配信内容の編集はできません。"}
-          </span>
-
+          onClick={() => {
+            setAllPeriod(true);
+            setYearMonth("");
+          }}
+        >
+          全期間
+        </Button>
+        <Input
+          type="month"
+          value={yearMonth}
+          onChange={(e) => {
+            setYearMonth(e.target.value);
+            setAllPeriod(!e.target.value);
+          }}
+          className="h-10 w-44"
+        />
+        <span className="text-xs text-muted-foreground">
+          {activeTab === "draft"
+            ? "※ 下書きは配信予定日時を過ぎても配信されません。"
+            : activeTab === "scheduled"
+              ? "※ 配信日時5分前から配信内容の編集はできません。"
+              : "※ 配信履歴は変更できません。"}
+        </span>
+        {activeTab !== "history" && (
           <Button
             variant="outline"
-            size="sm"
+            className="h-10 ml-auto text-muted-foreground hover:text-destructive"
             disabled={!hasSelection}
             onClick={handleBulkDelete}
-            className="ml-auto h-10 text-destructive hover:text-destructive"
           >
             <FontAwesomeIcon icon={faTrash} className="size-3" />
             一括削除
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* テーブル */}
       <div className="overflow-x-auto">
@@ -277,180 +236,40 @@ export default function BroadcastsPage() {
                   配信数
                 </th>
                 <th className="px-3 py-2 text-left font-bold text-foreground w-24">
-                  操作
+                  状態
                 </th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 ? (
-                <tr className="border-b border-border">
-                  <td
-                    colSpan={5}
-                    className="px-3 py-8 text-center text-sm text-muted-foreground"
-                  >
-                    {emptyMessage}
-                  </td>
-                </tr>
+                <EmptyRow colSpan={5} message={emptyMessage} />
               ) : (
-                items.map((b) => {
-                  const tag = tags.find((t) => t.id === b.targetTagId);
-                  return (
-                    <tr
-                      key={b.id}
-                      className="border-b border-border hover:bg-muted/30"
-                    >
-                      <td className="px-3 py-3 text-xs text-muted-foreground tabular-nums">
-                        {formatDt(b.sentAt)}
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="text-sm font-medium truncate">
-                          {b.title}
-                        </div>
-                        <div className="text-[11px] text-muted-foreground truncate max-w-md">
-                          {b.preview}
-                        </div>
-                      </td>
-                      <td className="px-3 py-3">
-                        {b.targetType === "all" ? (
-                          <span className="text-xs text-muted-foreground">
-                            全員
-                          </span>
-                        ) : tag ? (
-                          <TagBadge tag={tag} size="sm" />
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 text-right text-xs tabular-nums">
-                        {b.successCount.toLocaleString()}
-                        <span className="text-muted-foreground">
-                          {" / "}
-                          {b.totalCount.toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <Button variant="ghost" size="sm" className="h-7 text-xs">
-                          詳細
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        ) : activeTab === "draft" ? (
-          <table className="w-full text-sm">
-            <thead className="bg-muted/60">
-              <tr>
-                <th className="w-10 px-3 py-2 text-left">
-                  <input
-                    type="checkbox"
-                    checked={allCheckedInView}
-                    onChange={toggleAll}
-                    disabled={items.length === 0}
-                    className="size-4 rounded border-border accent-primary"
-                    aria-label="すべて選択"
-                  />
-                </th>
-                <SortableHeader label="作成・更新日時" className="w-44" />
-                <th className="px-3 py-2 text-left font-bold text-foreground">
-                  管理用タイトル
-                </th>
-                <SortableHeader label="配信予定日時" className="w-44" />
-                <th className="px-3 py-2 text-left font-bold text-foreground w-32">
-                  配信先絞込み
-                </th>
-                <th className="px-3 py-2 text-left font-bold text-foreground w-24">
-                  操作
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 ? (
-                <tr className="border-b border-border">
-                  <td
-                    colSpan={6}
-                    className="px-3 py-8 text-center text-sm text-muted-foreground"
+                items.map((b) => (
+                  <tr
+                    key={b.id}
+                    className="border-b border-border hover:bg-muted/30"
                   >
-                    {emptyMessage}
-                  </td>
-                </tr>
-              ) : (
-                items.map((b) => {
-                  const tag = tags.find((t) => t.id === b.targetTagId);
-                  const checked = selectedIds.has(b.id);
-                  return (
-                    <tr
-                      key={b.id}
-                      className={cn(
-                        "border-b border-border hover:bg-muted/30",
-                        checked && "bg-primary/5"
-                      )}
-                    >
-                      <td className="px-3 py-3">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleRow(b.id)}
-                          className="size-4 rounded border-border accent-primary"
-                          aria-label={`${b.title} を選択`}
-                        />
-                      </td>
-                      <td className="px-3 py-3 text-xs text-muted-foreground tabular-nums">
-                        {formatDt(b.updatedAt)}
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="text-sm font-medium truncate">
-                          {b.title}
-                        </div>
-                        <div className="text-[11px] text-muted-foreground truncate max-w-md">
-                          {b.preview}
-                        </div>
-                      </td>
-                      <td className="px-3 py-3 text-xs text-muted-foreground tabular-nums">
-                        {formatDt(b.scheduledAt)}
-                      </td>
-                      <td className="px-3 py-3">
-                        {b.targetType === "all" ? (
-                          <span className="text-xs text-muted-foreground">
-                            全員
-                          </span>
-                        ) : tag ? (
-                          <TagBadge tag={tag} size="sm" />
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="inline-flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label="編集"
-                          >
-                            <FontAwesomeIcon
-                              icon={faPenToSquare}
-                              className="size-3.5"
-                            />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label="削除"
-                            onClick={() => handleDelete(b.id)}
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <FontAwesomeIcon
-                              icon={faTrash}
-                              className="size-3.5"
-                            />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
+                    <td className="px-3 py-3 text-xs text-muted-foreground tabular-nums">
+                      {formatDt(b.sentAt)}
+                    </td>
+                    <td className="px-3 py-3">
+                      <TitleCell broadcast={b} />
+                    </td>
+                    <td className="px-3 py-3">
+                      <TargetCell broadcast={b} tags={tags} />
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs tabular-nums">
+                      {b.successCount.toLocaleString()}
+                      <span className="text-muted-foreground">
+                        {" / "}
+                        {b.totalCount.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3">
+                      <BroadcastStatusBadge status={b.status} />
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -468,7 +287,10 @@ export default function BroadcastsPage() {
                     aria-label="すべて選択"
                   />
                 </th>
-                <SortableHeader label="配信予定日時" className="w-44" />
+                <SortableHeader
+                  label={activeTab === "draft" ? "更新日時" : "配信予定日時"}
+                  className="w-40"
+                />
                 <th className="px-3 py-2 text-left font-bold text-foreground">
                   管理用タイトル
                 </th>
@@ -478,29 +300,31 @@ export default function BroadcastsPage() {
                 <th className="px-3 py-2 text-right font-bold text-foreground w-24">
                   配信数
                 </th>
-                <th className="px-3 py-2 text-left font-bold text-foreground w-24">
-                  状態
+                <th className="px-3 py-2 text-left font-bold text-foreground w-32">
+                  送信者名
                 </th>
                 <th className="px-3 py-2 text-left font-bold text-foreground w-24">
+                  アクション
+                </th>
+                <th className="px-3 py-2 text-left font-bold text-foreground w-28">
+                  クイックテスト
+                </th>
+                <th className="px-3 py-2 text-left font-bold text-foreground w-32">
                   操作
                 </th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 ? (
-                <tr className="border-b border-border">
-                  <td
-                    colSpan={7}
-                    className="px-3 py-8 text-center text-sm text-muted-foreground"
-                  >
-                    {emptyMessage}
-                  </td>
-                </tr>
+                <EmptyRow colSpan={9} message={emptyMessage} />
               ) : (
                 items.map((b) => {
-                  const tag = tags.find((t) => t.id === b.targetTagId);
-                  const when = b.scheduledAt ?? b.sentAt;
+                  const when =
+                    activeTab === "draft" ? b.updatedAt : b.scheduledAt;
                   const checked = selectedIds.has(b.id);
+                  // 編集・今すぐ配信は下書き/予約のみ（配信済み・送信中は不可）
+                  const editable =
+                    b.status === "draft" || b.status === "scheduled";
                   return (
                     <tr
                       key={b.id}
@@ -522,58 +346,70 @@ export default function BroadcastsPage() {
                         {formatDt(when)}
                       </td>
                       <td className="px-3 py-3">
-                        <div className="text-sm font-medium truncate">
-                          {b.title}
-                        </div>
-                        <div className="text-[11px] text-muted-foreground truncate max-w-md">
-                          {b.preview}
-                        </div>
+                        <TitleCell broadcast={b} />
                       </td>
                       <td className="px-3 py-3">
-                        {b.targetType === "all" ? (
-                          <span className="text-xs text-muted-foreground">
-                            全員
+                        <TargetCell broadcast={b} tags={tags} />
+                      </td>
+                      <td className="px-3 py-3 text-right text-xs tabular-nums text-muted-foreground">
+                        {b.totalCount > 0
+                          ? b.totalCount.toLocaleString()
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-3 text-xs text-muted-foreground truncate">
+                        {b.lineChannelName ?? "—"}
+                      </td>
+                      <td className="px-3 py-3 text-xs">
+                        {b.actionsCount && b.actionsCount > 0 ? (
+                          <span className="inline-flex items-center rounded border border-border px-2 py-1 text-[11px] font-bold text-foreground">
+                            設定済 {b.actionsCount}
                           </span>
-                        ) : tag ? (
-                          <TagBadge tag={tag} size="sm" />
                         ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
+                          <span className="text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-3 text-right text-xs tabular-nums">
-                        {b.successCount.toLocaleString()}
-                        <span className="text-muted-foreground">
-                          {" / "}
-                          {b.totalCount.toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <BroadcastStatusBadge status={b.status} />
+                      <td className="px-3 py-3 text-xs text-muted-foreground">
+                        —
                       </td>
                       <td className="px-3 py-3">
                         <div className="inline-flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label="編集"
-                          >
-                            <FontAwesomeIcon
-                              icon={faPenToSquare}
-                              className="size-3.5"
-                            />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label="削除"
-                            onClick={() => handleDelete(b.id)}
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <FontAwesomeIcon
-                              icon={faTrash}
-                              className="size-3.5"
-                            />
-                          </Button>
+                          {editable && (
+                            <Link
+                              href={`/broadcasts/new?id=${b.id}`}
+                              className="inline-flex items-center justify-center size-9 rounded-md hover:bg-muted text-foreground"
+                              aria-label="編集"
+                            >
+                              <FontAwesomeIcon
+                                icon={faPenToSquare}
+                                className="size-3.5"
+                              />
+                            </Link>
+                          )}
+                          {editable && (
+                            <button
+                              onClick={() => handleSendNow(b)}
+                              className="inline-flex items-center justify-center size-9 rounded-md hover:bg-muted text-blue-600 dark:text-blue-400"
+                              aria-label="今すぐ配信"
+                              title="今すぐ配信"
+                            >
+                              <FontAwesomeIcon
+                                icon={faPaperPlane}
+                                className="size-3.5"
+                              />
+                            </button>
+                          )}
+                          {b.status !== "sending" && (
+                            <button
+                              onClick={() => handleDelete(b)}
+                              className="inline-flex items-center justify-center size-9 rounded-md hover:bg-muted text-muted-foreground hover:text-destructive"
+                              aria-label="削除"
+                            >
+                              <FontAwesomeIcon
+                                icon={faTrash}
+                                className="size-3.5"
+                              />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -586,10 +422,52 @@ export default function BroadcastsPage() {
       </div>
 
       <div className="text-center text-sm text-muted-foreground">
-        全{items.length}件中 {items.length === 0 ? "1−0" : `1−${items.length}`}件を表示
+        全{items.length}件中 {items.length === 0 ? "1−0" : `1−${items.length}`}
+        件を表示
       </div>
     </div>
   );
+}
+
+function EmptyRow({ colSpan, message }: { colSpan: number; message: string }) {
+  return (
+    <tr className="border-b border-border">
+      <td
+        colSpan={colSpan}
+        className="px-3 py-8 text-center text-sm text-muted-foreground"
+      >
+        {message}
+      </td>
+    </tr>
+  );
+}
+
+function TitleCell({ broadcast: b }: { broadcast: MockBroadcast }) {
+  return (
+    <>
+      <div className="text-sm font-medium truncate">{b.title}</div>
+      <div className="text-[11px] text-muted-foreground truncate max-w-md">
+        {b.preview}
+      </div>
+    </>
+  );
+}
+
+function TargetCell({
+  broadcast,
+  tags,
+}: {
+  broadcast: MockBroadcast;
+  tags: MockTag[];
+}) {
+  if (broadcast.targetType === "all") {
+    return <span className="text-xs text-muted-foreground">全員</span>;
+  }
+  const tag = tags.find((t) => t.id === broadcast.targetTagId);
+  if (tag) {
+    return <TagBadge tag={tag} size="sm" />;
+  }
+  return <span className="text-xs text-muted-foreground">—</span>;
 }
 
 function SortableHeader({
@@ -608,7 +486,10 @@ function SortableHeader({
     >
       <span className="inline-flex items-center gap-1">
         {label}
-        <FontAwesomeIcon icon={faSort} className="size-2.5 text-muted-foreground" />
+        <FontAwesomeIcon
+          icon={faSort}
+          className="size-2.5 text-muted-foreground"
+        />
       </span>
     </th>
   );

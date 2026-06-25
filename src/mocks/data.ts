@@ -75,6 +75,8 @@ export type MockBroadcast = {
   updatedAt: string;
   totalCount: number;
   successCount: number;
+  lineChannelName?: string;
+  actionsCount?: number;
 };
 
 export type MockScenarioStep = {

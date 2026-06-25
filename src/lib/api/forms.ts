@@ -32,6 +32,11 @@ export async function bulkDeleteForms(ids: string[]): Promise<void> {
   await apiFetch("/forms/bulk-delete", { method: "POST", body: { ids: ids.map(Number) } });
 }
 
+/** DELETE /forms/{id}（単体削除） */
+export async function deleteForm(id: string): Promise<void> {
+  await apiFetch(`/forms/${id}`, { method: "DELETE" });
+}
+
 /** POST /forms（新規）/ PUT /forms/{id}（更新）。フォームビルダーの送信payload。 */
 export async function saveForm(
   payload: unknown,

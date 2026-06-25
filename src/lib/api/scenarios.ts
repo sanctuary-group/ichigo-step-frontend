@@ -35,6 +35,49 @@ export async function deleteScenario(id: string): Promise<void> {
   await apiFetch(`/scenarios/${id}`, { method: "DELETE" });
 }
 
+/** POST /scenarios/{id}/duplicate — ステップ・メッセージごと複製（停止状態で作成） */
+export async function duplicateScenario(id: string): Promise<ApiScenario> {
+  return apiFetch<ApiScenario>(`/scenarios/${id}/duplicate`, { method: "POST" });
+}
+
+/** POST /scenarios/bulk-delete */
+export async function bulkDeleteScenarios(ids: string[]): Promise<void> {
+  await apiFetch("/scenarios/bulk-delete", {
+    method: "POST",
+    body: { ids: ids.map(Number) },
+  });
+}
+
+/** POST /scenarios/bulk-move */
+export async function bulkMoveScenarios(
+  ids: string[],
+  scenarioFolderId: string,
+): Promise<void> {
+  await apiFetch("/scenarios/bulk-move", {
+    method: "POST",
+    body: { ids: ids.map(Number), scenario_folder_id: Number(scenarioFolderId) },
+  });
+}
+
+export type ScenarioSubscriber = {
+  id: number;
+  name: string;
+  picture_url: string | null;
+  current_step_order: number;
+};
+
+export type ScenarioSubscriberStatus = "active" | "terminated" | "completed";
+
+/** GET /scenarios/{id}/subscribers?status= */
+export async function fetchScenarioSubscribers(
+  id: string,
+  status: ScenarioSubscriberStatus,
+): Promise<ScenarioSubscriber[]> {
+  return apiFetch<ScenarioSubscriber[]>(`/scenarios/${id}/subscribers`, {
+    query: { status },
+  });
+}
+
 /**
  * シナリオ作成 / 更新。
  * 新規: POST /scenarios、編集: PUT /scenarios/{id}。

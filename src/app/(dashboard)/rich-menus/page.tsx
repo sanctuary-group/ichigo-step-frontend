@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -14,80 +15,128 @@ import {
   faFolderTree,
   faEyeSlash,
   faInbox,
+  faMobileScreenButton,
+  faUser,
+  faEllipsis,
+  faChartColumn,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { MOCK_RICH_MENUS, MOCK_RICH_MENU_FOLDERS } from "@/mocks/data";
+import { BulkMoveDialog } from "@/components/rich-menus/bulk-move-dialog";
+import { FolderDialog } from "@/components/rich-menus/folder-dialog";
 import { cn } from "@/lib/utils";
+import { useResource } from "@/lib/api/use-resource";
+import { useAuth } from "@/lib/auth/auth-context";
+import {
+  fetchRichMenus,
+  deleteRichMenu as apiDeleteRichMenu,
+  bulkDeleteRichMenus,
+  bulkMoveRichMenus,
+} from "@/lib/api/rich-menus";
+import {
+  fetchFolders,
+  createFolder,
+  deleteFolder as apiDeleteFolder,
+  type Folder,
+} from "@/lib/api/folders";
+import type { RichMenu } from "@/types/rich-menu";
 
 const MAX_NAME = 50;
+
+type RichMenuRow = RichMenu & { display_count?: number };
 
 function pad(n: number): string {
   return n.toString().padStart(2, "0");
 }
 
-function formatYmd(iso: string): string {
+function formatYmd(iso: string | null): string {
+  if (!iso) return "—";
   const d = new Date(iso);
-  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
 }
 
 export default function RichMenusPage() {
-  const router = useRouter();
-  const [selectedFolderId, setSelectedFolderId] = useState<string>("rmf_default");
+  const { currentChannelId } = useAuth();
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [pageSize, setPageSize] = useState("100");
+  const [appliedQuery, setAppliedQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [folderVisible, setFolderVisible] = useState(true);
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newFolderId, setNewFolderId] = useState<string>("rmf_default");
-  const [addToTop, setAddToTop] = useState(false);
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
 
-  const folderCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const m of MOCK_RICH_MENUS) {
-      map.set(m.folderId, (map.get(m.folderId) ?? 0) + 1);
-    }
-    return map;
-  }, []);
+  const { data: folders, mutate: mutateFolders } = useResource(
+    currentChannelId ? `rich-menu-folders:${currentChannelId}` : null,
+    () => fetchFolders("rich-menu-folders"),
+  );
+  const folderList: Folder[] = folders ?? [];
 
-  const filtered = useMemo(() => {
-    return MOCK_RICH_MENUS.filter((m) => {
-      if (m.folderId !== selectedFolderId) return false;
-      if (query.trim()) {
-        const q = query.trim().toLowerCase();
-        if (!m.name.toLowerCase().includes(q)) return false;
-      }
-      return true;
-    });
-  }, [selectedFolderId, query]);
+  const { data: richMenusData, mutate } = useResource(
+    currentChannelId
+      ? `rich-menus:${currentChannelId}:${selectedFolderId ?? ""}:${appliedQuery}`
+      : null,
+    () =>
+      fetchRichMenus({
+        folder: selectedFolderId ?? undefined,
+        q: appliedQuery || undefined,
+      }),
+  );
+  const richMenus: RichMenuRow[] = richMenusData ?? [];
+
+  const selectFolder = (folderId: string) => {
+    setSelectedFolderId((cur) => (cur === folderId ? null : folderId));
+    setSelectedIds(new Set());
+  };
+
+  const onSearch = (e: FormEvent) => {
+    e.preventDefault();
+    setAppliedQuery(query.trim());
+  };
+
+  const deleteRichMenu = async (m: RichMenu) => {
+    const msg = m.is_published
+      ? `「${m.name}」は公開中です。削除すると LINE 側のリッチメニューも取り下げられます。削除しますか？`
+      : `「${m.name}」を削除しますか？`;
+    if (!confirm(msg)) return;
+    await apiDeleteRichMenu(m.id);
+    mutate();
+    mutateFolders();
+  };
+
+  const deleteFolder = async (f: Folder) => {
+    if (f.isSystem) return;
+    const count = f.itemsCount ?? 0;
+    const msg =
+      count > 0
+        ? `「${f.name}」を削除します。${count} 件のリッチメニューも一緒に削除されます。`
+        : `「${f.name}」を削除しますか？`;
+    if (!confirm(msg)) return;
+    await apiDeleteFolder("rich-menu-folders", f.id);
+    if (selectedFolderId === f.id) setSelectedFolderId(null);
+    mutateFolders();
+    mutate();
+  };
 
   const allCheckedInView =
-    filtered.length > 0 && filtered.every((m) => selectedIds.has(m.id));
+    richMenus.length > 0 && richMenus.every((m) => selectedIds.has(m.id));
 
   const toggleAll = () => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (allCheckedInView) {
-        for (const m of filtered) next.delete(m.id);
+        for (const m of richMenus) next.delete(m.id);
       } else {
-        for (const m of filtered) next.add(m.id);
+        for (const m of richMenus) next.add(m.id);
       }
       return next;
     });
   };
 
-  const toggleRow = (id: string) => {
+  const toggleRow = (id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -98,17 +147,39 @@ export default function RichMenusPage() {
 
   const selectionCount = selectedIds.size;
 
+  const bulkDelete = async () => {
+    if (selectionCount === 0) return;
+    if (
+      !confirm(
+        `選択した ${selectionCount} 件を削除します。公開中のメニューは LINE 側からも取り下げられます。よろしいですか？`,
+      )
+    )
+      return;
+    await bulkDeleteRichMenus([...selectedIds]);
+    setSelectedIds(new Set());
+    mutate();
+    mutateFolders();
+  };
+
+  const onBulkMove = async (folderId: string) => {
+    await bulkMoveRichMenus([...selectedIds], folderId);
+    setSelectedIds(new Set());
+    setBulkMoveOpen(false);
+    mutate();
+    mutateFolders();
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 py-4 border-b border-border bg-muted/30">
         <h1 className="text-lg font-bold tracking-tight">リッチメニュー</h1>
-        <Button
+        <button
           onClick={() => setCreateOpen(true)}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-5 font-bold"
+          className="inline-flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-5 rounded-md font-bold text-sm transition-colors"
         >
           <FontAwesomeIcon icon={faPlus} className="size-3.5" />
           新規作成
-        </Button>
+        </button>
       </div>
 
       <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
@@ -119,6 +190,7 @@ export default function RichMenusPage() {
               <div className="flex items-center gap-1">
                 <button
                   type="button"
+                  onClick={() => setFolderDialogOpen(true)}
                   className="grid place-items-center size-7 rounded hover:bg-muted text-muted-foreground"
                   aria-label="フォルダ追加"
                 >
@@ -126,7 +198,8 @@ export default function RichMenusPage() {
                 </button>
                 <button
                   type="button"
-                  className="grid place-items-center size-7 rounded hover:bg-muted text-muted-foreground"
+                  disabled
+                  className="grid place-items-center size-7 rounded hover:bg-muted text-muted-foreground disabled:opacity-40"
                   aria-label="並べ替え"
                 >
                   <FontAwesomeIcon icon={faArrowsUpDown} className="size-3.5" />
@@ -134,28 +207,33 @@ export default function RichMenusPage() {
               </div>
             </div>
             <ul className="flex-1 overflow-y-auto px-2 space-y-1">
-              {MOCK_RICH_MENU_FOLDERS.map((f) => {
+              {folderList.map((f) => {
                 const active = f.id === selectedFolderId;
-                const count = folderCounts.get(f.id) ?? 0;
                 return (
-                  <li key={f.id}>
+                  <li key={f.id} className="group flex items-center gap-1">
                     <button
-                      onClick={() => {
-                        setSelectedFolderId(f.id);
-                        setSelectedIds(new Set());
-                      }}
+                      onClick={() => selectFolder(f.id)}
                       className={cn(
-                        "w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between gap-2",
+                        "flex-1 text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between gap-2 min-w-0",
                         active
                           ? "bg-muted text-foreground"
-                          : "text-foreground hover:bg-muted/50"
+                          : "text-foreground hover:bg-muted/50",
                       )}
                     >
                       <span className="truncate">{f.name}</span>
                       <span className="text-muted-foreground text-xs tabular-nums">
-                        ({count})
+                        ({f.itemsCount ?? 0})
                       </span>
                     </button>
+                    {!f.isSystem && (
+                      <button
+                        onClick={() => deleteFolder(f)}
+                        className="grid place-items-center size-7 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label="削除"
+                      >
+                        <FontAwesomeIcon icon={faTrashCan} className="size-3" />
+                      </button>
+                    )}
                   </li>
                 );
               })}
@@ -173,7 +251,7 @@ export default function RichMenusPage() {
 
         <section className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-border flex-wrap">
-            <div className="relative w-72 max-w-full">
+            <form onSubmit={onSearch} className="relative w-72 max-w-full">
               <FontAwesomeIcon
                 icon={faMagnifyingGlass}
                 className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
@@ -184,7 +262,7 @@ export default function RichMenusPage() {
                 onChange={(e) => setQuery(e.target.value)}
                 className="pl-9 h-9"
               />
-            </div>
+            </form>
             <div className="flex items-center gap-2 flex-wrap">
               {!folderVisible && (
                 <Button
@@ -197,15 +275,15 @@ export default function RichMenusPage() {
                   フォルダを表示
                 </Button>
               )}
-              <Button variant="outline" size="sm" className="h-9">
+              <Button variant="outline" size="sm" className="h-9" disabled>
                 <FontAwesomeIcon icon={faClockRotateLeft} className="size-3.5" />
                 操作予約・履歴
               </Button>
-              <Button variant="outline" size="sm" className="h-9">
+              <Button variant="outline" size="sm" className="h-9" disabled>
                 <FontAwesomeIcon icon={faArrowsUpDown} className="size-3.5" />
                 並べ替え
               </Button>
-              <Button variant="outline" size="sm" className="h-9">
+              <Button variant="outline" size="sm" className="h-9" disabled>
                 <FontAwesomeIcon icon={faTrashCan} className="size-3.5" />
                 削除したアイテム
               </Button>
@@ -221,7 +299,7 @@ export default function RichMenusPage() {
                       type="checkbox"
                       checked={allCheckedInView}
                       onChange={toggleAll}
-                      disabled={filtered.length === 0}
+                      disabled={richMenus.length === 0}
                       className="size-4 rounded border-border accent-primary"
                       aria-label="すべて選択"
                     />
@@ -232,16 +310,16 @@ export default function RichMenusPage() {
                   </th>
                   <SortableHeader label="作成日" className="w-32" />
                   <SortableHeader label="最終編集日" className="w-32" />
-                  <th className="px-3 py-2 text-left font-bold text-foreground w-24">
+                  <th className="px-3 py-2 text-left font-bold text-foreground whitespace-nowrap">
                     操作
                   </th>
-                  <th className="px-3 py-2 text-left font-bold text-foreground w-20">
+                  <th className="px-3 py-2 text-left font-bold text-foreground whitespace-nowrap">
                     表示中
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {richMenus.length === 0 ? (
                   <tr>
                     <td colSpan={7}>
                       <div className="flex flex-col items-center justify-center py-24 gap-2 text-muted-foreground">
@@ -251,26 +329,29 @@ export default function RichMenusPage() {
                         />
                         <div className="text-sm">まだデータがありません</div>
                         <div className="text-xs">
-                          <a
-                            href="#"
+                          <button
+                            onClick={() => setCreateOpen(true)}
                             className="text-blue-600 dark:text-blue-400 underline hover:no-underline"
                           >
                             新規作成
-                          </a>
-                          {" "}するとここにデータが表示されます
+                          </button>{" "}
+                          するとここにデータが表示されます
                         </div>
                       </div>
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((m) => {
+                  richMenus.map((m) => {
                     const checked = selectedIds.has(m.id);
+                    const actionCount = (m.areas ?? []).filter(
+                      (a) => a.type !== "none",
+                    ).length;
                     return (
                       <tr
                         key={m.id}
                         className={cn(
                           "border-b border-border hover:bg-muted/30",
-                          checked && "bg-primary/5"
+                          checked && "bg-primary/5",
                         )}
                       >
                         <td className="px-3 py-3">
@@ -282,19 +363,93 @@ export default function RichMenusPage() {
                             aria-label={`${m.name} を選択`}
                           />
                         </td>
-                        <td className="px-3 py-3 font-medium">{m.name}</td>
-                        <td className="px-3 py-3 text-xs text-muted-foreground">
-                          {m.tapAreas.length} 件
+                        <td className="px-3 py-3 align-top">
+                          <Link
+                            href={`/rich-menus/${m.id}/edit`}
+                            className="group block w-40 cursor-pointer"
+                          >
+                            <span className="block font-bold text-blue-600 dark:text-blue-400 group-hover:underline">
+                              {m.name}
+                            </span>
+                            <span className="mt-1.5 block overflow-hidden rounded border border-border transition group-hover:border-primary group-hover:ring-2 group-hover:ring-primary/30">
+                              {m.image_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={m.image_url}
+                                  alt={m.name}
+                                  className="block w-full object-cover aspect-[5/3] transition group-hover:opacity-90"
+                                />
+                              ) : (
+                                <span className="grid w-full place-items-center aspect-[5/3] bg-muted text-muted-foreground/40">
+                                  <FontAwesomeIcon
+                                    icon={faMobileScreenButton}
+                                    className="size-6"
+                                  />
+                                </span>
+                              )}
+                            </span>
+                          </Link>
                         </td>
-                        <td className="px-3 py-3 text-xs text-muted-foreground tabular-nums">
-                          {formatYmd(m.createdAt)}
+                        <td className="px-3 py-3 align-top">
+                          {actionCount > 0 ? (
+                            <span className="inline-flex items-center rounded border border-border px-3 py-1.5 text-xs text-foreground">
+                              アクション設定済
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              未設定
+                            </span>
+                          )}
                         </td>
-                        <td className="px-3 py-3 text-xs text-muted-foreground tabular-nums">
-                          {formatYmd(m.updatedAt)}
+                        <td className="px-3 py-3 align-top text-xs text-muted-foreground tabular-nums">
+                          {formatYmd(m.created_at)}
                         </td>
-                        <td className="px-3 py-3"></td>
-                        <td className="px-3 py-3 text-xs">
-                          {m.isPublished ? "公開中" : "—"}
+                        <td className="px-3 py-3 align-top text-xs text-muted-foreground tabular-nums">
+                          {formatYmd(m.updated_at)}
+                        </td>
+                        <td className="px-3 py-3 align-top">
+                          <Link
+                            href={`/rich-menus/${m.id}/display`}
+                            className={cn(
+                              "inline-flex items-center gap-2 whitespace-nowrap rounded-md border px-3 py-2 text-xs font-bold transition-colors",
+                              m.is_published
+                                ? "border-emerald-500 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+                                : "border-border text-foreground hover:bg-muted",
+                            )}
+                          >
+                            <FontAwesomeIcon
+                              icon={faMobileScreenButton}
+                              className="size-3.5"
+                            />
+                            表示・停止する
+                          </Link>
+                        </td>
+                        <td className="px-3 py-3 align-top">
+                          <div className="flex items-center gap-3 whitespace-nowrap">
+                            <span className="inline-flex items-center gap-2 text-sm">
+                              <FontAwesomeIcon
+                                icon={faUser}
+                                className="size-3.5 text-muted-foreground"
+                              />
+                              <span className="font-bold tabular-nums">
+                                {m.display_count ?? 0}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                人
+                              </span>
+                            </span>
+                            <button
+                              disabled
+                              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground disabled:opacity-60"
+                            >
+                              <FontAwesomeIcon
+                                icon={faChartColumn}
+                                className="size-3"
+                              />
+                              データ表示
+                            </button>
+                            <RowActionsMenu onDelete={() => deleteRichMenu(m)} />
+                          </div>
                         </td>
                       </tr>
                     );
@@ -310,6 +465,7 @@ export default function RichMenusPage() {
                 variant="outline"
                 size="sm"
                 disabled={selectionCount === 0}
+                onClick={() => setBulkMoveOpen(true)}
                 className="h-9 disabled:opacity-50"
               >
                 <FontAwesomeIcon icon={faFolderTree} className="size-3.5" />
@@ -319,105 +475,41 @@ export default function RichMenusPage() {
                 variant="outline"
                 size="sm"
                 disabled={selectionCount === 0}
-                className="h-9 disabled:opacity-50"
+                onClick={bulkDelete}
+                className="h-9 disabled:opacity-50 text-destructive hover:text-destructive"
               >
                 <FontAwesomeIcon icon={faTrashCan} className="size-3.5" />
                 一括削除
               </Button>
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <Select
-                value={pageSize}
-                onValueChange={(v) => v && setPageSize(v)}
-              >
-                <SelectTrigger className="h-9 w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="50">50件 / ページ</SelectItem>
-                  <SelectItem value="100">100件 / ページ</SelectItem>
-                  <SelectItem value="200">200件 / ページ</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              全 {richMenus.length} 件
+            </span>
           </div>
         </section>
       </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogTitle className="text-base font-bold">
-            リッチメニュー 新規作成
-          </DialogTitle>
-
-          <div className="space-y-5 pt-2">
-            <div className="space-y-2">
-              <div className="flex items-end justify-between">
-                <Label htmlFor="rm-name" className="text-sm font-bold">
-                  管理名
-                </Label>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {newName.length}/{MAX_NAME}
-                </span>
-              </div>
-              <Input
-                id="rm-name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                maxLength={MAX_NAME}
-                placeholder="管理名を入力して下さい"
-                className="h-11"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-sm font-bold">フォルダ</Label>
-              <Select
-                value={newFolderId}
-                onValueChange={(v) => v && setNewFolderId(v)}
-              >
-                <SelectTrigger className="h-11 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MOCK_RICH_MENU_FOLDERS.map((f) => (
-                    <SelectItem key={f.id} value={f.id}>
-                      {f.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={addToTop}
-                onChange={(e) => setAddToTop(e.target.checked)}
-                className="size-4 rounded border-border accent-primary"
-              />
-              フォルダ内の一番上に追加する
-            </label>
-
-            <p className="text-xs text-muted-foreground">
-              ※ 未選択の場合、フォルダの一番下に追加されます
-            </p>
-
-            <div className="pt-2 flex justify-end">
-              <Button
-                disabled={newName.length === 0}
-                onClick={() => {
-                  setCreateOpen(false);
-                  router.push("/rich-menus/new");
-                }}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-6 font-bold disabled:opacity-50"
-              >
-                リッチメニューの登録に進む
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <FolderDialog
+        open={folderDialogOpen}
+        onClose={() => setFolderDialogOpen(false)}
+        onCreate={async (name) => {
+          await createFolder("rich-menu-folders", name);
+          mutateFolders();
+        }}
+      />
+      <CreateDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        folders={folderList}
+        defaultFolderId={selectedFolderId ?? folderList[0]?.id ?? null}
+      />
+      <BulkMoveDialog
+        open={bulkMoveOpen}
+        onClose={() => setBulkMoveOpen(false)}
+        folders={folderList}
+        count={selectionCount}
+        onMove={onBulkMove}
+      />
     </div>
   );
 }
@@ -432,8 +524,8 @@ function SortableHeader({
   return (
     <th
       className={cn(
-        "px-3 py-2 text-left font-bold text-foreground cursor-pointer hover:text-primary",
-        className
+        "px-3 py-2 text-left font-bold text-foreground",
+        className,
       )}
     >
       <span className="inline-flex items-center gap-1">
@@ -444,5 +536,158 @@ function SortableHeader({
         />
       </span>
     </th>
+  );
+}
+
+function RowActionsMenu({ onDelete }: { onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  const toggle = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setPos({ top: r.bottom + 4, left: r.right - 140 });
+    setOpen((v) => !v);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("click", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        onClick={toggle}
+        className="grid place-items-center size-8 rounded-md hover:bg-muted text-muted-foreground"
+        aria-label="その他の操作"
+      >
+        <FontAwesomeIcon icon={faEllipsis} className="size-4" />
+      </button>
+      {open && pos && (
+        <div
+          style={{ top: pos.top, left: pos.left }}
+          className="fixed z-50 w-[140px] rounded-md border border-border bg-popover py-1 shadow-lg"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              setOpen(false);
+              onDelete();
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-muted"
+          >
+            <FontAwesomeIcon icon={faTrashCan} className="size-3.5" />
+            削除
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function CreateDialog({
+  open,
+  onClose,
+  folders,
+  defaultFolderId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  folders: Folder[];
+  defaultFolderId: string | null;
+}) {
+  const router = useRouter();
+  const [name, setName] = useState("");
+  const [folderId, setFolderId] = useState<string>(defaultFolderId ?? "");
+  const [addToTop, setAddToTop] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setFolderId(defaultFolderId ?? folders[0]?.id ?? "");
+      setAddToTop(false);
+    }
+  }, [open, defaultFolderId, folders]);
+
+  const onSubmit = () => {
+    const params = new URLSearchParams({ name, folder: folderId });
+    router.push(`/rich-menus/new?${params.toString()}`);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogTitle className="text-base font-bold">
+          リッチメニュー 新規作成
+        </DialogTitle>
+
+        <div className="space-y-5 pt-2">
+          <div className="space-y-2">
+            <div className="flex items-end justify-between">
+              <Label htmlFor="rm-name" className="text-sm font-bold">
+                管理名
+              </Label>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {name.length}/{MAX_NAME}
+              </span>
+            </div>
+            <Input
+              id="rm-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={MAX_NAME}
+              placeholder="管理名を入力して下さい"
+              className="h-11"
+              autoFocus
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm font-bold">フォルダ</Label>
+            <select
+              value={folderId}
+              onChange={(e) => setFolderId(e.target.value)}
+              className="w-full h-11 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={addToTop}
+              onChange={(e) => setAddToTop(e.target.checked)}
+              className="size-4 rounded border-border accent-primary"
+            />
+            フォルダ内の一番上に追加する
+          </label>
+
+          <p className="text-xs text-muted-foreground">
+            ※ 未選択の場合、フォルダの一番下に追加されます
+          </p>
+
+          <div className="pt-2 flex justify-end">
+            <button
+              disabled={name.length === 0}
+              onClick={onSubmit}
+              className="inline-flex items-center bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-6 rounded-md font-bold text-sm disabled:opacity-50 transition-colors"
+            >
+              リッチメニューの登録に進む
+            </button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

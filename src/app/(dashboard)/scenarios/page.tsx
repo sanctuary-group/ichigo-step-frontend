@@ -1,17 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faPlus,
-  faMagnifyingGlass,
-  faArrowsUpDown,
-  faFolderPlus,
-  faAngleDoubleLeft,
-  faFolder,
   faTrash,
+  faFolder,
+  faFolderPlus,
+  faArrowsUpDown,
+  faMagnifyingGlass,
+  faAngleDoubleLeft,
+  faEllipsis,
+  faCopy,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
@@ -22,86 +24,129 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { MOCK_SCENARIO_FOLDERS } from "@/mocks/data";
 import { cn } from "@/lib/utils";
-import { fetchScenarios, deleteScenario } from "@/lib/api/scenarios";
+import {
+  fetchScenarios,
+  deleteScenario,
+  duplicateScenario,
+  bulkDeleteScenarios,
+  type ScenarioSubscriberStatus,
+} from "@/lib/api/scenarios";
+import {
+  fetchFolders,
+  deleteFolder as deleteFolderApi,
+  type Folder,
+} from "@/lib/api/folders";
 import { useResource } from "@/lib/api/use-resource";
 import { useAuth } from "@/lib/auth/auth-context";
+import type { MockScenario } from "@/mocks/data";
+import { SubscribersModal } from "@/components/scenarios/subscribers-modal";
+import { FolderDialog } from "@/components/scenarios/folder-dialog";
+import { BulkMoveDialog } from "@/components/scenarios/bulk-move-dialog";
 
-const MAX_SCENARIO_NAME = 20;
-// backend のフォルダ一覧APIは未提供のため、取得したシナリオはすべて
-// システム既定の「未分類」フォルダ配下として表示する。
-const DEFAULT_FOLDER_ID = "sfld_default";
+const MAX_SCENARIO_NAME = 100;
 
 export default function ScenariosPage() {
   const router = useRouter();
   const { currentChannelId } = useAuth();
-  const [selectedFolderId, setSelectedFolderId] = useState<string>(DEFAULT_FOLDER_ID);
   const [query, setQuery] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [showFolderPane, setShowFolderPane] = useState(true);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [pageSize, setPageSize] = useState("10");
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newFolderId, setNewFolderId] = useState<string>("sfld_default");
-  const [insertTop, setInsertTop] = useState(false);
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+  const [subscriberView, setSubscriberView] = useState<{
+    scenario: MockScenario;
+    status: ScenarioSubscriberStatus;
+  } | null>(null);
 
-  const openCreate = () => {
-    setNewName("");
-    setNewFolderId(selectedFolderId);
-    setInsertTop(false);
-    setCreateOpen(true);
-  };
+  const { data: folders, mutate: mutateFolders } = useResource(
+    currentChannelId ? `scenario-folders:${currentChannelId}` : null,
+    () => fetchFolders("scenario-folders"),
+  );
+  const folderList = useMemo(() => folders ?? [], [folders]);
+
+  // 既定の選択フォルダ（先頭フォルダ）を初期化。
+  useEffect(() => {
+    if (selectedFolderId === null && folderList.length > 0) {
+      setSelectedFolderId(folderList[0].id);
+    }
+  }, [folderList, selectedFolderId]);
 
   const { data: scenarios, mutate } = useResource(
-    currentChannelId ? `scenarios:${currentChannelId}:${query.trim()}` : null,
-    () => fetchScenarios({ q: query.trim() || undefined }),
+    currentChannelId
+      ? `scenarios:${currentChannelId}:${selectedFolderId ?? ""}:${appliedQuery}`
+      : null,
+    () =>
+      fetchScenarios({
+        folder: selectedFolderId ?? undefined,
+        q: appliedQuery || undefined,
+      }),
   );
-  const allScenarios = useMemo(() => scenarios ?? [], [scenarios]);
+  const rows = useMemo(() => scenarios ?? [], [scenarios]);
 
-  const folderCounts = useMemo(() => {
-    // 取得分はすべて既定フォルダに集約。
-    const map = new Map<string, number>();
-    map.set(DEFAULT_FOLDER_ID, allScenarios.length);
-    return map;
-  }, [allScenarios]);
-
-  // 既定フォルダ選択時のみ一覧を表示（他フォルダは未対応）。
-  const filtered = useMemo(
-    () => (selectedFolderId === DEFAULT_FOLDER_ID ? allScenarios : []),
-    [selectedFolderId, allScenarios],
-  );
-
-  async function handleBulkDelete() {
-    await Promise.all([...selectedIds].map((id) => deleteScenario(id)));
-    setSelectedIds(new Set());
+  const refresh = () => {
     mutate();
-  }
+    mutateFolders();
+  };
 
-  const allCheckedInView =
-    filtered.length > 0 && filtered.every((s) => selectedIds.has(s.id));
-  const hasSelection = selectedIds.size > 0;
+  const onSearch = (e: FormEvent) => {
+    e.preventDefault();
+    setAppliedQuery(query.trim());
+  };
 
-  const handleFolderChange = (id: string) => {
+  const selectFolder = (id: string) => {
     setSelectedFolderId(id);
     setSelectedIds(new Set());
   };
+
+  const handleDelete = async (s: MockScenario) => {
+    if (!confirm(`「${s.name}」を削除しますか？`)) return;
+    await deleteScenario(s.id);
+    refresh();
+  };
+
+  const handleDuplicate = async (s: MockScenario) => {
+    await duplicateScenario(s.id);
+    refresh();
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`選択した ${selectedIds.size} 件のシナリオを削除しますか？`))
+      return;
+    await bulkDeleteScenarios([...selectedIds]);
+    setSelectedIds(new Set());
+    refresh();
+  };
+
+  const handleDeleteFolder = async (f: Folder) => {
+    if (f.isSystem) return;
+    const count = f.itemsCount ?? 0;
+    const msg =
+      count > 0
+        ? `「${f.name}」を削除します。${count} 件のシナリオも一緒に削除されます。`
+        : `「${f.name}」を削除しますか？`;
+    if (!confirm(msg)) return;
+    await deleteFolderApi("scenario-folders", f.id);
+    if (selectedFolderId === f.id) setSelectedFolderId(folderList[0]?.id ?? null);
+    refresh();
+  };
+
+  const allCheckedInView =
+    rows.length > 0 && rows.every((s) => selectedIds.has(s.id));
+  const hasSelection = selectedIds.size > 0;
 
   const toggleAll = () => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (allCheckedInView) {
-        for (const s of filtered) next.delete(s.id);
+        for (const s of rows) next.delete(s.id);
       } else {
-        for (const s of filtered) next.add(s.id);
+        for (const s of rows) next.add(s.id);
       }
       return next;
     });
@@ -118,7 +163,6 @@ export default function ScenariosPage() {
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col p-4 sm:p-6 lg:p-8 gap-4">
-      {/* ヘッダー */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">ステップ配信</h1>
         <p className="text-sm text-muted-foreground mt-1">
@@ -129,37 +173,52 @@ export default function ScenariosPage() {
       <hr className="border-border" />
 
       <div className="flex-1 flex overflow-hidden gap-6">
-        {/* 左ペイン: フォルダ */}
         {showFolderPane && (
           <aside className="w-56 shrink-0 flex flex-col gap-3 overflow-hidden">
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="flex-1 h-9">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 h-9"
+                onClick={() => setFolderDialogOpen(true)}
+              >
                 <FontAwesomeIcon icon={faFolderPlus} className="size-3" />
                 フォルダ追加
               </Button>
-              <Button variant="outline" size="sm" className="h-9">
+              <Button variant="outline" size="sm" className="h-9" disabled>
                 <FontAwesomeIcon icon={faArrowsUpDown} className="size-3" />
                 並べ替え
               </Button>
             </div>
 
             <ul className="flex-1 overflow-y-auto space-y-1">
-              {MOCK_SCENARIO_FOLDERS.map((f) => {
+              {folderList.map((f) => {
                 const active = f.id === selectedFolderId;
-                const count = folderCounts.get(f.id) ?? 0;
                 return (
-                  <li key={f.id}>
+                  <li key={f.id} className="group flex items-center gap-1">
                     <button
-                      onClick={() => handleFolderChange(f.id)}
+                      onClick={() => selectFolder(f.id)}
                       className={cn(
-                        "w-full text-left px-3 py-2 rounded-md text-sm transition-colors",
+                        "flex-1 text-left px-3 py-2 rounded-md text-sm transition-colors min-w-0",
                         active
                           ? "bg-muted text-foreground"
-                          : "text-foreground hover:bg-muted/50"
+                          : "text-foreground hover:bg-muted/50",
                       )}
                     >
-                      {f.name} ({count})
+                      <span className="truncate">
+                        {f.name} ({f.itemsCount ?? 0})
+                      </span>
                     </button>
+                    {!f.isSystem && (
+                      <Button
+                        variant="ghost"
+                        className="size-7 p-0 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => handleDeleteFolder(f)}
+                        aria-label="削除"
+                      >
+                        <FontAwesomeIcon icon={faTrash} className="size-3" />
+                      </Button>
+                    )}
                   </li>
                 );
               })}
@@ -175,7 +234,6 @@ export default function ScenariosPage() {
           </aside>
         )}
 
-        {/* 右ペイン: テーブル */}
         <section className="flex-1 flex flex-col overflow-hidden min-w-0">
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <div className="flex items-center gap-2">
@@ -190,20 +248,20 @@ export default function ScenariosPage() {
                 </Button>
               )}
               <button
-                onClick={openCreate}
+                onClick={() => setCreateOpen(true)}
                 className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
               >
                 <FontAwesomeIcon icon={faPlus} className="size-3" />
                 新規作成
               </button>
-              <Button variant="outline" size="sm" className="h-9">
+              <Button variant="outline" size="sm" className="h-9" disabled>
                 <FontAwesomeIcon icon={faArrowsUpDown} className="size-3" />
                 並べ替え
               </Button>
             </div>
 
             {searchOpen ? (
-              <div className="relative w-64">
+              <form onSubmit={onSearch} className="relative w-64">
                 <FontAwesomeIcon
                   icon={faMagnifyingGlass}
                   className="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
@@ -216,7 +274,7 @@ export default function ScenariosPage() {
                   autoFocus
                   className="pl-9 h-9"
                 />
-              </div>
+              </form>
             ) : (
               <Button
                 variant="outline"
@@ -239,7 +297,7 @@ export default function ScenariosPage() {
                       type="checkbox"
                       checked={allCheckedInView}
                       onChange={toggleAll}
-                      disabled={filtered.length === 0}
+                      disabled={rows.length === 0}
                       className="size-4 rounded border-border accent-primary"
                       aria-label="すべて選択"
                     />
@@ -247,34 +305,44 @@ export default function ScenariosPage() {
                   <th className="px-3 py-2 text-left font-bold text-foreground">
                     管理名
                   </th>
-                  <th className="px-3 py-2 text-right font-bold text-foreground w-40">
+                  <th className="px-3 py-2 text-left font-bold text-foreground w-44">
                     購読中の友だち
                   </th>
-                  <th className="px-3 py-2 text-right font-bold text-foreground w-40">
+                  <th className="px-3 py-2 text-left font-bold text-foreground w-44">
                     途中で終了した友だち
                   </th>
-                  <th className="px-3 py-2 text-right font-bold text-foreground w-40">
+                  <th className="px-3 py-2 text-left font-bold text-foreground w-44">
                     読了済の友だち
                   </th>
+                  <th className="px-3 py-2 w-12" />
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {rows.length === 0 ? (
                   <tr className="border-b border-border">
-                    <td colSpan={5} className="px-3 py-12" />
+                    <td
+                      colSpan={6}
+                      className="px-3 py-12 text-center text-sm text-muted-foreground"
+                    >
+                      データがありません。
+                    </td>
                   </tr>
                 ) : (
-                  filtered.map((s) => {
+                  rows.map((s) => {
                     const checked = selectedIds.has(s.id);
                     return (
                       <tr
                         key={s.id}
+                        onClick={() => router.push(`/scenarios/${s.id}/edit`)}
                         className={cn(
-                          "border-b border-border hover:bg-muted/30",
-                          checked && "bg-primary/5"
+                          "border-b border-border hover:bg-muted/30 cursor-pointer",
+                          checked && "bg-primary/5",
                         )}
                       >
-                        <td className="px-3 py-3">
+                        <td
+                          className="px-3 py-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <input
                             type="checkbox"
                             checked={checked}
@@ -285,8 +353,9 @@ export default function ScenariosPage() {
                         </td>
                         <td className="px-3 py-3">
                           <Link
-                            href={`/scenarios/new?id=${s.id}`}
+                            href={`/scenarios/${s.id}/edit`}
                             className="text-sm font-medium hover:underline"
+                            onClick={(e) => e.stopPropagation()}
                           >
                             {s.name}
                           </Link>
@@ -296,14 +365,38 @@ export default function ScenariosPage() {
                             </div>
                           )}
                         </td>
-                        <td className="px-3 py-3 text-right text-sm tabular-nums">
-                          {s.enrolledCount.toLocaleString()}
-                        </td>
-                        <td className="px-3 py-3 text-right text-sm tabular-nums">
-                          {s.terminatedCount.toLocaleString()}
-                        </td>
-                        <td className="px-3 py-3 text-right text-sm tabular-nums">
-                          {s.completedCount.toLocaleString()}
+                        <CountCell
+                          count={s.enrolledCount}
+                          onShow={() =>
+                            setSubscriberView({ scenario: s, status: "active" })
+                          }
+                        />
+                        <CountCell
+                          count={s.terminatedCount}
+                          onShow={() =>
+                            setSubscriberView({
+                              scenario: s,
+                              status: "terminated",
+                            })
+                          }
+                        />
+                        <CountCell
+                          count={s.completedCount}
+                          onShow={() =>
+                            setSubscriberView({
+                              scenario: s,
+                              status: "completed",
+                            })
+                          }
+                        />
+                        <td
+                          className="px-3 py-3 text-right"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <RowActionsMenu
+                            onCopy={() => handleDuplicate(s)}
+                            onDelete={() => handleDelete(s)}
+                          />
                         </td>
                       </tr>
                     );
@@ -313,13 +406,13 @@ export default function ScenariosPage() {
             </table>
           </div>
 
-          {/* ボトムアクション */}
           <div className="flex items-center justify-between gap-3 pt-3 mt-auto">
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 disabled={!hasSelection}
+                onClick={() => setBulkMoveOpen(true)}
                 className="h-9"
               >
                 <FontAwesomeIcon icon={faFolder} className="size-3" />
@@ -337,95 +430,202 @@ export default function ScenariosPage() {
               </Button>
             </div>
 
-            <Select value={pageSize} onValueChange={(v) => v && setPageSize(v)}>
-              <SelectTrigger className="w-28 h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10/page</SelectItem>
-                <SelectItem value="25">25/page</SelectItem>
-                <SelectItem value="50">50/page</SelectItem>
-              </SelectContent>
-            </Select>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              全 {rows.length} 件
+            </span>
           </div>
         </section>
       </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogTitle className="text-center text-lg font-bold">
-            ステップ配信 新規作成
-          </DialogTitle>
-
-          <div className="space-y-5 pt-2">
-            <div className="space-y-2">
-              <div className="flex items-end justify-between">
-                <Label htmlFor="sc-name" className="text-sm font-bold">
-                  管理名
-                </Label>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {newName.length}/{MAX_SCENARIO_NAME}
-                </span>
-              </div>
-              <Input
-                id="sc-name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                maxLength={MAX_SCENARIO_NAME}
-                className="h-11"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-sm font-bold">フォルダ</Label>
-              <Select
-                value={newFolderId}
-                onValueChange={(v) => v && setNewFolderId(v)}
-              >
-                <SelectTrigger className="h-11 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MOCK_SCENARIO_FOLDERS.map((f) => (
-                    <SelectItem key={f.id} value={f.id}>
-                      {f.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
-                <input
-                  type="checkbox"
-                  checked={insertTop}
-                  onChange={(e) => setInsertTop(e.target.checked)}
-                  className="size-4 rounded border-border accent-primary"
-                />
-                フォルダ内の一番上に追加する
-              </label>
-              <div className="text-[11px] text-muted-foreground pl-6">
-                ※ 未選択の場合、フォルダの一番下に追加されます
-              </div>
-            </div>
-
-            <div className="pt-2 flex justify-center">
-              <Button
-                variant="outline"
-                disabled={newName.length === 0}
-                className="border-primary text-primary hover:bg-primary/10 hover:text-primary px-10 h-11 disabled:opacity-50"
-                onClick={() => {
-                  setCreateOpen(false);
-                  router.push("/scenarios/new");
-                }}
-              >
-                メッセージの登録に進む
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <FolderDialog
+        open={folderDialogOpen}
+        onClose={() => setFolderDialogOpen(false)}
+        onCreated={mutateFolders}
+      />
+      <CreateScenarioDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+      />
+      <BulkMoveDialog
+        open={bulkMoveOpen}
+        onClose={() => setBulkMoveOpen(false)}
+        folders={folderList}
+        ids={[...selectedIds]}
+        onDone={() => {
+          setBulkMoveOpen(false);
+          setSelectedIds(new Set());
+          refresh();
+        }}
+      />
+      {subscriberView && (
+        <SubscribersModal
+          scenario={subscriberView.scenario}
+          status={subscriberView.status}
+          onClose={() => setSubscriberView(null)}
+        />
+      )}
     </div>
+  );
+}
+
+function CountCell({
+  count,
+  onShow,
+}: {
+  count: number;
+  onShow: () => void;
+}) {
+  return (
+    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center gap-3">
+        <span className="text-sm tabular-nums">{count.toLocaleString()}人</span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8"
+          disabled={count === 0}
+          onClick={onShow}
+        >
+          表示
+        </Button>
+      </div>
+    </td>
+  );
+}
+
+function RowActionsMenu({
+  onCopy,
+  onDelete,
+}: {
+  onCopy: () => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, right: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+    }
+    setOpen((v) => !v);
+  };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggle}
+        aria-label="操作メニュー"
+        className="inline-flex items-center justify-center size-9 rounded-md hover:bg-muted text-muted-foreground"
+      >
+        <FontAwesomeIcon icon={faEllipsis} className="size-4" />
+      </button>
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setOpen(false)}
+          />
+          <div
+            className="fixed z-50 min-w-36 overflow-hidden rounded-md border border-border bg-popover py-1 shadow-lg"
+            style={{ top: pos.top, right: pos.right }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onCopy();
+              }}
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-muted"
+            >
+              <FontAwesomeIcon
+                icon={faCopy}
+                className="size-4 text-muted-foreground"
+              />
+              コピー
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onDelete();
+              }}
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-muted"
+            >
+              <FontAwesomeIcon
+                icon={faTrash}
+                className="size-4 text-muted-foreground"
+              />
+              削除
+            </button>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+function CreateScenarioDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [name, setName] = useState("");
+
+  useEffect(() => {
+    if (open) setName("");
+  }, [open]);
+
+  const onSubmit = () => {
+    onClose();
+    router.push("/scenarios/new");
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogTitle className="text-center text-lg font-bold">
+          ステップ配信 新規作成
+        </DialogTitle>
+
+        <div className="space-y-5 pt-2">
+          <div className="space-y-2">
+            <div className="flex items-end justify-between">
+              <Label htmlFor="sc-name" className="text-sm font-bold">
+                管理名
+              </Label>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {name.length}/{MAX_SCENARIO_NAME}
+              </span>
+            </div>
+            <Input
+              id="sc-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={MAX_SCENARIO_NAME}
+              className="h-11"
+              autoFocus
+            />
+          </div>
+
+          <div className="pt-2 flex justify-center">
+            <Button
+              variant="outline"
+              disabled={name.length === 0}
+              className="border-primary text-primary hover:bg-primary/10 hover:text-primary px-10 h-11 disabled:opacity-50"
+              onClick={onSubmit}
+            >
+              メッセージの登録に進む
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
