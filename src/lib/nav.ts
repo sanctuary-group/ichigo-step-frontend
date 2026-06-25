@@ -11,12 +11,14 @@ import {
   faRobot,
   faQrcode,
   faDatabase,
+  faShieldHalved,
   faGear,
   faListCheck,
   faTag,
   faAddressCard,
   faUsers,
   faFileCsv,
+  faCircleQuestion,
 } from "@fortawesome/free-solid-svg-icons";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 
@@ -83,6 +85,11 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "自動応答", href: "/auto-replies", icon: faRobot },
       { label: "QRコードアクション", href: "/qr-actions", icon: faQrcode },
       {
+        label: "BAN検知 & 切替",
+        href: "/ban-detection",
+        icon: faShieldHalved,
+      },
+      {
         label: "データ管理",
         href: "/data-management",
         icon: faDatabase,
@@ -101,6 +108,12 @@ export const NAV_GROUPS: NavGroup[] = [
           },
         ],
       },
+    ],
+  },
+  {
+    heading: "サポート",
+    items: [
+      { label: "使い方ガイド", href: "/guide", icon: faCircleQuestion },
     ],
   },
 ];
