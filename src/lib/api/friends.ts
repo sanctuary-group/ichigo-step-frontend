@@ -44,6 +44,15 @@ export async function fetchFriendMessages(id: string): Promise<MockMessage[]> {
   return items.map(mapMessage);
 }
 
+/** POST /friends/{id}/messages （テキスト1:1送信） */
+export async function sendFriendMessage(id: string, content: string): Promise<MockMessage> {
+  const data = await apiFetch<ApiMessage>(`/friends/${id}/messages`, {
+    method: "POST",
+    body: { content },
+  });
+  return mapMessage(data);
+}
+
 /** PATCH /friends/{id}/pin */
 export async function toggleFriendPin(id: string): Promise<MockFriend> {
   const data = await apiFetch<ApiFriend>(`/friends/${id}/pin`, { method: "PATCH" });

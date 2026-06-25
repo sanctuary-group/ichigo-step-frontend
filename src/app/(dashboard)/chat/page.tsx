@@ -36,6 +36,7 @@ export default function ChatPage() {
         mobileVisible={view === "thread"}
         onBack={() => setView("list")}
         onShowInfo={() => setView("info")}
+        onSent={refreshFriend}
       />
       {friend && (
         <RightInfoPanel

@@ -74,7 +74,8 @@ export function mapMessage(api: ApiMessage): MockMessage {
   return {
     id: s(api.id),
     friendId: s(api.friend_id),
-    direction: api.direction === "inbound" ? "incoming" : "outgoing",
+    direction:
+      api.direction === "inbound" || api.direction === "incoming" ? "incoming" : "outgoing",
     type: asMessageType(api.message_type),
     content: api.content ?? "",
     timestamp: api.sent_at ?? api.created_at ?? "",

@@ -23,24 +23,51 @@ import { ChatBubble } from "@/components/chat/chat-bubble";
 import { EmptyState } from "@/components/empty-state";
 import { faComments } from "@fortawesome/free-solid-svg-icons";
 import { type MockFriend } from "@/mocks/data";
-import { fetchFriendMessages } from "@/lib/api/friends";
+import { useState } from "react";
+import { fetchFriendMessages, sendFriendMessage } from "@/lib/api/friends";
 import { useResource } from "@/lib/api/use-resource";
+import { ApiError } from "@/lib/api/client";
 
 export function ChatThreadPane({
   friend,
   mobileVisible = true,
   onBack,
   onShowInfo,
+  onSent,
 }: {
   friend: MockFriend | undefined;
   mobileVisible?: boolean;
   onBack?: () => void;
   onShowInfo?: () => void;
+  onSent?: () => void;
 }) {
-  const { data: messages = [] } = useResource(
+  const { data: messages = [], mutate } = useResource(
     friend ? `messages:${friend.id}` : null,
     () => fetchFriendMessages(friend!.id),
   );
+
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  async function handleSend() {
+    const text = draft.trim();
+    if (!text || !friend || sending) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      await sendFriendMessage(friend.id, text);
+      setDraft("");
+      mutate();
+      onSent?.();
+    } catch (e) {
+      setSendError(
+        e instanceof ApiError ? e.message : "送信に失敗しました。時間をおいて再度お試しください。",
+      );
+    } finally {
+      setSending(false);
+    }
+  }
 
   const mobileVisibilityClass = mobileVisible ? "flex" : "hidden";
 
@@ -219,7 +246,15 @@ export function ChatThreadPane({
             <Input
               placeholder="メッセージを入力してください"
               className="flex-1 h-10 rounded-full bg-muted/40 border-transparent"
-              disabled
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              disabled={sending}
             />
             <Button
               variant="ghost"
@@ -234,14 +269,15 @@ export function ChatThreadPane({
               size="icon"
               className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
               aria-label="送信"
-              disabled
+              onClick={handleSend}
+              disabled={sending || draft.trim().length === 0}
             >
               <FontAwesomeIcon icon={faPaperPlane} className="size-3.5" />
             </Button>
           </div>
-          <div className="text-[10px] text-muted-foreground text-center">
-            モックアップのため、送信操作は無効化されています
-          </div>
+          {sendError && (
+            <div className="text-[11px] text-destructive text-center">{sendError}</div>
+          )}
         </div>
       </div>
     </div>
