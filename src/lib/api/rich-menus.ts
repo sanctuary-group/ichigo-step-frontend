@@ -1,6 +1,7 @@
 // リッチメニュー（移植版 RichMenus/Form）の取得・保存・公開を tenant API に橋渡しする。
-import { apiFetch } from "./client";
+import { apiFetch, apiFetchPaginated } from "./client";
 import { API_ORIGIN } from "./config";
+import type { ApiFriend } from "./types";
 import type { RichMenu } from "@/types/rich-menu";
 
 /**
@@ -87,6 +88,82 @@ export async function bulkDeleteRichMenus(
     method: "POST",
     body: { ids },
   });
+}
+
+/** 表示・停止画面（RichMenus/Display）が消費する友だち1件。 */
+export type RichMenuDisplayFriend = {
+  id: number;
+  name: string;
+  picture_url: string | null;
+  linked: boolean;
+};
+
+/** 表示・停止画面のローダーが返すデータ一式。 */
+export type RichMenuDisplayData = {
+  displayCount: number;
+  followingCount: number;
+  friends: RichMenuDisplayFriend[];
+};
+
+/**
+ * 表示・停止画面用のデータをまとめて取得する。
+ * backend に専用エンドポイントが無いため GET /friends を全ページ取得し、
+ *   - friends: 各友だち（linked = rich_menu_id === richMenuId）
+ *   - displayCount: このリッチメニューが表示されている友だち数（rich_menu_id 一致）
+ *   - followingCount: フォロー中の友だち総数（is_following）
+ * を導出する。
+ */
+export async function fetchRichMenuDisplayData(
+  richMenuId: number | string,
+): Promise<RichMenuDisplayData> {
+  const rid = Number(richMenuId);
+  const all: ApiFriend[] = [];
+  let page = 1;
+  // friends は per_page=50 のページネーション。全件取得する。
+  for (;;) {
+    const { items, meta } = await apiFetchPaginated<ApiFriend>("/friends", {
+      query: { page },
+    });
+    all.push(...items);
+    if (page >= (meta.last_page ?? 1)) break;
+    page += 1;
+  }
+
+  const friends: RichMenuDisplayFriend[] = all.map((f) => ({
+    id: f.id,
+    name: f.system_display_name || f.display_name || "（名前未設定）",
+    picture_url: f.picture_url,
+    linked: f.rich_menu_id === rid,
+  }));
+
+  return {
+    friends,
+    displayCount: all.filter((f) => f.rich_menu_id === rid).length,
+    followingCount: all.filter((f) => f.is_following).length,
+  };
+}
+
+/** 表示・停止の適用（POST /rich-menus/{id}/display）に送る payload。 */
+export type DisplayRichMenuPayload = {
+  mode: "show" | "stop";
+  schedule: "now" | "reserved";
+  scheduled_at: string | null;
+  target: "all" | "individual";
+  friend_ids: number[];
+};
+
+/**
+ * POST /rich-menus/{id}/display（applyDisplay）。
+ * mode=show|stop, schedule=now|reserved, target=all|individual。実 LINE 反映あり。
+ */
+export async function displayRichMenu(
+  id: number | string,
+  payload: DisplayRichMenuPayload,
+): Promise<{ status: string; message?: string }> {
+  return apiFetch<{ status: string; message?: string }>(
+    `/rich-menus/${id}/display`,
+    { method: "POST", body: payload },
+  );
 }
 
 /** POST /rich-menus/bulk-move */

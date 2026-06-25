@@ -1,6 +1,8 @@
-import { apiFetch } from "./client";
+import { apiFetch, ApiError } from "./client";
 import { mapQrAction } from "./mappers";
-import { API_ORIGIN } from "./config";
+import { API_ORIGIN, TENANT_BASE } from "./config";
+import { getToken } from "./token-store";
+import { getCurrentChannelId } from "./channel-store";
 import type { ApiQrAction } from "./types";
 import type { MockQrAction } from "@/mocks/data";
 import type { QrAction } from "@/types/qr-action";
@@ -84,4 +86,92 @@ export async function saveQrAction(
 export async function toggleQrAction(id: string): Promise<MockQrAction> {
   const data = await apiFetch<ApiQrAction>(`/qr-actions/${id}/toggle-active`, { method: "PATCH" });
   return mapQrAction(data);
+}
+
+/* ===== データ詳細（流入分析） ===== */
+
+export type QrActionStatRow = {
+  date: string;
+  scans: number;
+  follows: number;
+  actions: number;
+};
+
+export type QrActionFriendRow = {
+  added_at: string | null;
+  display_name: string | null;
+  system_display_name: string | null;
+  friend_type: "new" | "existing" | "unblock";
+  is_following: boolean;
+  unfollowed_at: string | null;
+};
+
+export type QrActionDataDetail = {
+  qrAction: { id: number; name: string; created_date: string };
+  period: { from: string; to: string };
+  rows: QrActionStatRow[];
+  totals: { scans: number; follows: number; actions: number };
+  friends: QrActionFriendRow[];
+  friendStats: { new: number; existing: number; unblock: number; blocked: number };
+};
+
+/**
+ * GET /qr-actions/{id}/data?from&to
+ * 流入分析データ（数値情報 / 友だち一覧 / 友だち種別統計）をまとめて取得する。
+ *
+ * NOTE: 2026-06 時点でテナント API（/api/tenant/v1）側に当エンドポイントは未実装。
+ * monolith では web ルート `qr-actions/{qrAction}/data`（Inertia）にのみ存在する。
+ * 404/未実装時は呼び出し側で空状態フォールバックする想定。
+ */
+export async function fetchQrActionDataDetail(
+  id: number | string,
+  period: { from?: string; to?: string } = {},
+): Promise<QrActionDataDetail> {
+  return apiFetch<QrActionDataDetail>(`/qr-actions/${id}/data`, {
+    query: { from: period.from, to: period.to },
+  });
+}
+
+/** ダウンロードURL（GET /qr-actions/{id}/data/csv） */
+export function qrActionDataCsvUrl(
+  id: number | string,
+  kind: "stats" | "friends" | "lp",
+  period: { from?: string; to?: string } = {},
+): string {
+  const url = new URL(`${API_ORIGIN}${TENANT_BASE}/qr-actions/${id}/data/csv`);
+  url.searchParams.set("kind", kind);
+  if (period.from) url.searchParams.set("from", period.from);
+  if (period.to) url.searchParams.set("to", period.to);
+  return url.toString();
+}
+
+/**
+ * GET /qr-actions/{id}/data/csv
+ * Bearer 認証が必要なため blob で取得し、ブラウザでダウンロードを発火する。
+ * （downloadCsvJob と同じ作法）
+ */
+export async function downloadQrActionDataCsv(
+  id: number | string,
+  kind: "stats" | "friends" | "lp",
+  filename: string,
+  period: { from?: string; to?: string } = {},
+): Promise<void> {
+  const headers = new Headers({ Accept: "text/csv" });
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const channelId = getCurrentChannelId();
+  if (channelId) headers.set("X-Line-Channel-Id", channelId);
+
+  const res = await fetch(qrActionDataCsvUrl(id, kind, period), { headers });
+  if (!res.ok) throw new ApiError(res.status, `ダウンロードに失敗しました (HTTP ${res.status})`);
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.endsWith(".csv") ? filename : `${filename}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

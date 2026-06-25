@@ -3,7 +3,14 @@ import { API_ORIGIN } from "./config";
 import { mapForm } from "./mappers";
 import type { ApiForm } from "./types";
 import type { MockForm } from "@/mocks/data";
-import type { FormModel } from "@/types/form";
+import type { FormModel, FormFieldData, FormResponseRow } from "@/types/form";
+
+/** GET /forms/{id}/responses のレスポンス形（monolith Forms/Responses props 相当） */
+export type FormResponsesData = {
+  form: FormModel;
+  fields: FormFieldData[];
+  responses: FormResponseRow[];
+};
 
 /**
  * GET /forms/{id}（編集用）。FormResource を snake_case のまま返す。
@@ -17,6 +24,16 @@ export async function fetchRawForm(
         ...data,
         public_url: data.token ? `${API_ORIGIN}/f/${data.token}` : undefined,
     };
+}
+
+/**
+ * GET /forms/{id}/responses
+ * フォームの回答一覧を取得する。{ form, fields, responses } を返す。
+ */
+export async function fetchFormResponses(
+  formId: string,
+): Promise<FormResponsesData> {
+  return apiFetch<FormResponsesData>(`/forms/${formId}/responses`);
 }
 
 /** GET /forms */
