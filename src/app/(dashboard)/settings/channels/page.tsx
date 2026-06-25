@@ -15,6 +15,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
+import { GuideButton } from "@/components/guide-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -88,10 +89,13 @@ export default function ChannelsSettingsPage() {
             複数の LINE 公式アカウントを束ねて管理できます
           </p>
         </div>
-        <Button onClick={() => setShowAdd((v) => !v)}>
-          <FontAwesomeIcon icon={faPlus} className="size-3.5" />
-          チャネルを追加
-        </Button>
+        <div className="flex items-center gap-2">
+          <GuideButton topic="connection" />
+          <Button onClick={() => setShowAdd((v) => !v)}>
+            <FontAwesomeIcon icon={faPlus} className="size-3.5" />
+            チャネルを追加
+          </Button>
+        </div>
       </div>
 
       {toast && (

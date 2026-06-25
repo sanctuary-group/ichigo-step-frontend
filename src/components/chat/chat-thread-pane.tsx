@@ -5,6 +5,7 @@ import {
   faPaperclip,
   faEnvelope,
   faEnvelopeOpen,
+  faFaceSmile,
   faPaperPlane,
   faChevronLeft,
   faCircleInfo,
@@ -16,10 +17,10 @@ import {
   faChevronDown,
   faPenToSquare,
   faCheck,
+  faUser,
 } from "@fortawesome/free-solid-svg-icons";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -38,7 +39,6 @@ import {
 } from "@/components/ui/dialog";
 import { ChatBubble } from "@/components/chat/chat-bubble";
 import { EmptyState } from "@/components/empty-state";
-import { EmojiPicker } from "@/components/emoji-picker";
 import { cn } from "@/lib/utils";
 import { type MockFriend } from "@/mocks/data";
 import {
@@ -262,10 +262,21 @@ function ChatHeader({
         aria-label={`${name} の詳細情報を開く`}
         title="友だちの詳細情報を開く"
       >
-        <Avatar className="size-8">
-          <AvatarImage src={friend.pictureUrl} />
-          <AvatarFallback>{name.slice(0, 1)}</AvatarFallback>
-        </Avatar>
+        <div className="relative flex shrink-0 items-center justify-center overflow-hidden rounded-full size-8">
+          {friend.pictureUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={friend.pictureUrl}
+              alt={name}
+              className="size-full object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <div className="size-full bg-zinc-400 bg-gradient-to-br from-zinc-300 to-zinc-500 flex items-center justify-center text-white">
+              <FontAwesomeIcon icon={faUser} className="size-1/2" />
+            </div>
+          )}
+        </div>
         <div className="font-medium text-sm text-primary truncate min-w-0 group-hover:underline">
           {name}
         </div>
@@ -422,6 +433,7 @@ function Composer({
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -435,8 +447,24 @@ function Composer({
       return null;
     });
     setError(null);
+    setEmojiOpen(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [friend.id]);
+
+  useEffect(() => {
+    if (!emojiOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        !document.getElementById("emoji-popover")?.contains(target) &&
+        !document.getElementById("emoji-trigger")?.contains(target)
+      ) {
+        setEmojiOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [emojiOpen]);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -614,7 +642,17 @@ function Composer({
             onKeyDown={onKeyDown}
             disabled={!friend.isFollowing || processing || !!imagePreview}
           />
-          <EmojiPicker onSelect={insertEmoji} compact />
+          <Button
+            id="emoji-trigger"
+            type="button"
+            variant="ghost"
+            className="rounded-full text-muted-foreground hover:text-foreground size-9 p-0"
+            aria-label="絵文字"
+            onClick={() => setEmojiOpen((v) => !v)}
+            disabled={!friend.isFollowing || processing}
+          >
+            <FontAwesomeIcon icon={faFaceSmile} className="size-4" />
+          </Button>
           <Button
             type="submit"
             className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 size-9 p-0"
@@ -630,6 +668,8 @@ function Composer({
           </div>
         )}
       </form>
+
+      {emojiOpen && <EmojiPopover onSelect={insertEmoji} />}
 
       <Dialog
         open={previewOpen}
@@ -676,6 +716,38 @@ function Composer({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+const EMOJIS = [
+  "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣",
+  "😊", "😇", "🙂", "🙃", "😉", "😌", "😍", "🥰",
+  "😘", "😗", "😙", "😚", "😋", "😛", "😝", "😜",
+  "🤔", "🤨", "😐", "😑", "😶", "🙄", "😏", "😣",
+  "😢", "😭", "😤", "😠", "😡", "🥺", "😱", "😨",
+  "👍", "👎", "👏", "🙏", "💪", "🙌", "👌", "✌️",
+  "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "💔",
+  "🎉", "🎊", "🎁", "🎂", "🍰", "☕", "🍻", "🌸",
+  "⭐", "✨", "💡", "🔥", "💯", "✅", "❌", "❓",
+];
+
+function EmojiPopover({ onSelect }: { onSelect: (emoji: string) => void }) {
+  return (
+    <div
+      id="emoji-popover"
+      className="absolute bottom-16 right-12 z-40 bg-popover border border-border rounded-lg shadow-lg p-2 grid grid-cols-9 gap-0.5"
+    >
+      {EMOJIS.map((e) => (
+        <button
+          key={e}
+          type="button"
+          onClick={() => onSelect(e)}
+          className="size-8 hover:bg-muted rounded text-lg"
+        >
+          {e}
+        </button>
+      ))}
     </div>
   );
 }

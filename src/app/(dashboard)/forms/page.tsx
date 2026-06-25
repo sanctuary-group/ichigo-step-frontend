@@ -18,6 +18,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
+import { GuideButton } from "@/components/guide-button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { fetchForms, bulkDeleteForms, deleteForm } from "@/lib/api/forms";
@@ -155,8 +156,9 @@ export default function FormsPage() {
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
-      <div className="px-4 sm:px-6 lg:px-8 pt-5 pb-3 border-b border-border">
+      <div className="px-4 sm:px-6 lg:px-8 pt-5 pb-3 border-b border-border flex items-center justify-between gap-4">
         <h1 className="text-lg font-bold tracking-tight">フォーム作成</h1>
+        <GuideButton topic="liff" />
       </div>
 
       <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
@@ -314,14 +316,13 @@ export default function FormsPage() {
                   <th className="px-3 py-2 text-left font-bold text-foreground w-24">
                     回答情報
                   </th>
-                  <th className="px-3 py-2 text-left font-bold text-foreground w-16" />
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={10}
+                      colSpan={9}
                       className="px-3 py-12 text-sm text-center text-muted-foreground"
                     >
                       フォームが登録されていません。
@@ -428,18 +429,6 @@ export default function FormsPage() {
                             />
                             {f.responseCount}
                           </Link>
-                        </td>
-                        <td className="px-3 py-3">
-                          <button
-                            onClick={() => handleDeleteForm(f)}
-                            className="grid place-items-center size-7 rounded text-muted-foreground hover:text-destructive"
-                            aria-label="削除"
-                          >
-                            <FontAwesomeIcon
-                              icon={faTrashCan}
-                              className="size-3.5"
-                            />
-                          </button>
                         </td>
                       </tr>
                     );

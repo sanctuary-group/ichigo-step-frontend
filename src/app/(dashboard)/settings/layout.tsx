@@ -33,7 +33,7 @@ export default function SettingsLayout({
         <div className="mb-6">
           <h1 className="text-2xl font-bold tracking-tight">設定</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            組織・チャネル・メンバーの管理
+            LINE チャネル・プロフィールの管理
           </p>
         </div>
 

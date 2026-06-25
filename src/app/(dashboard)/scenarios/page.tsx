@@ -355,7 +355,6 @@ export default function ScenariosPage() {
                           <Link
                             href={`/scenarios/${s.id}/edit`}
                             className="text-sm font-medium hover:underline"
-                            onClick={(e) => e.stopPropagation()}
                           >
                             {s.name}
                           </Link>

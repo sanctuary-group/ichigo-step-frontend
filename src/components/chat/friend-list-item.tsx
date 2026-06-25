@@ -1,17 +1,11 @@
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faBookmark, faUser } from "@fortawesome/free-solid-svg-icons";
+import { faBookmark } from "@fortawesome/free-solid-svg-icons";
 
+import { FriendAvatar } from "@/components/friend-avatar";
 import { cn } from "@/lib/utils";
+import { friendDisplayName } from "@/lib/friend";
 import { formatRelativeShort } from "@/lib/time";
 import type { Friend } from "@/types/chat";
-
-function friendDisplayName(friend: Friend): string {
-    return (
-        friend.system_display_name?.trim() ||
-        friend.display_name?.trim() ||
-        "(名前未取得)"
-    );
-}
 
 export function FriendListItem({
     friend,
@@ -48,50 +42,37 @@ export function FriendListItem({
                 </span>
             )}
             <div className="flex w-full items-start gap-3">
-                <div className="relative flex shrink-0 items-center justify-center overflow-hidden rounded-full size-11">
-                    {friend.picture_url ? (
-                        <img
-                            src={friend.picture_url}
-                            alt={name}
-                            className="size-full object-cover"
-                            loading="lazy"
+            <FriendAvatar friend={friend} className="size-11 shrink-0" />
+            <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                    {friend.pinned_at && (
+                        <FontAwesomeIcon
+                            icon={faBookmark}
+                            className="size-3 text-primary shrink-0"
+                            aria-label="ピン留め中"
                         />
-                    ) : (
-                        <div className="size-full bg-zinc-400 bg-gradient-to-br from-zinc-300 to-zinc-500 flex items-center justify-center text-white">
-                            <FontAwesomeIcon icon={faUser} className="size-1/2" />
-                        </div>
                     )}
-                </div>
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                        {friend.pinned_at && (
-                            <FontAwesomeIcon
-                                icon={faBookmark}
-                                className="size-3 text-primary shrink-0"
-                                aria-label="ピン留め中"
-                            />
-                        )}
-                        <div className="text-sm font-medium truncate flex-1">
-                            {name}
-                        </div>
-                        {friend.last_message_at && (
-                            <div className="text-[11px] text-muted-foreground shrink-0">
-                                {formatRelativeShort(friend.last_message_at)}
-                            </div>
-                        )}
+                    <div className="text-sm font-medium truncate flex-1">
+                        {name}
                     </div>
-                    {friend.last_message_preview && (
-                        <div className="text-xs text-muted-foreground truncate mt-0.5">
-                            {friend.last_message_preview}
+                    {friend.last_message_at && (
+                        <div className="text-[11px] text-muted-foreground shrink-0">
+                            {formatRelativeShort(friend.last_message_at)}
                         </div>
                     )}
                 </div>
-                {friend.unread_count > 0 && (
-                    <span
-                        className="size-2.5 rounded-full bg-destructive shrink-0 mt-2"
-                        aria-label="未読"
-                    />
+                {friend.last_message_preview && (
+                    <div className="text-xs text-muted-foreground truncate mt-0.5">
+                        {friend.last_message_preview}
+                    </div>
                 )}
+            </div>
+            {friend.unread_count > 0 && (
+                <span
+                    className="size-2.5 rounded-full bg-destructive shrink-0 mt-2"
+                    aria-label="未読"
+                />
+            )}
             </div>
         </button>
     );

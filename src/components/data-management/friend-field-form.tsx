@@ -8,13 +8,6 @@ import { faPlus, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ApiError } from "@/lib/api/client";
 import {
   createFriendField,
@@ -128,21 +121,17 @@ export function FriendFieldForm({
         </Section>
 
         <Section title="フォルダ">
-          <Select
+          <select
             value={effectiveFolderId}
-            onValueChange={(v) => v && setFolderId(v)}
+            onChange={(e) => setFolderId(e.target.value)}
+            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
           >
-            <SelectTrigger className="h-10 w-full">
-              <SelectValue placeholder="フォルダを選択" />
-            </SelectTrigger>
-            <SelectContent>
-              {folders.map((f) => (
-                <SelectItem key={f.id} value={f.id}>
-                  {f.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            {folders.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
         </Section>
 
         <div className="lg:col-span-2">
@@ -154,22 +143,18 @@ export function FriendFieldForm({
               </span>
             </h2>
           </SectionHeader>
-          <Select
+          <select
             value={fieldType}
-            onValueChange={(v) => v && setFieldType(v as FriendFieldType)}
+            onChange={(e) => setFieldType(e.target.value as FriendFieldType)}
             disabled={isEdit}
+            className="h-10 w-full sm:w-1/2 rounded-md border border-input bg-background px-3 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <SelectTrigger className="h-10 w-full sm:w-1/2 disabled:opacity-60 disabled:cursor-not-allowed">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {FIELD_TYPES.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {FIELD_TYPE_LABELS[t]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            {FIELD_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {FIELD_TYPE_LABELS[t]}
+              </option>
+            ))}
+          </select>
         </div>
 
         {fieldType === "choice" && (
@@ -264,7 +249,7 @@ export function FriendFieldForm({
           disabled={saving || !name.trim() || !effectiveFolderId}
           className="bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-16 font-bold disabled:opacity-50"
         >
-          {saving ? "保存中…" : "保存"}
+          {saving ? "保存中..." : "保存"}
         </Button>
       </div>
     </div>

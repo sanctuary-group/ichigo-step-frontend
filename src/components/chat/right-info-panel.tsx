@@ -95,10 +95,10 @@ import {
 /* ─────────────────────────── 流入経路ラベル ─────────────────────────── */
 
 const SOURCE_LABELS: Record<string, string> = {
-  qr: "QRコード",
+  qr: "QR コード",
   card: "名刺",
   web: "Web",
-  manual: "手動登録",
+  manual: "手動追加",
   other: "その他",
 };
 

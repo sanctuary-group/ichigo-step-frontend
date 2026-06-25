@@ -36,8 +36,22 @@ import { API_ORIGIN } from "./config";
 
 const s = (v: number | string): string => String(v);
 
+const MESSAGE_TYPES: MockMessageType[] = [
+  "text",
+  "image",
+  "sticker",
+  "video",
+  "audio",
+  "file",
+  "location",
+  "flex",
+  "postback",
+];
+
 function asMessageType(v: string | null | undefined): MockMessageType {
-  return v === "image" || v === "flex" || v === "sticker" ? v : "text";
+  return MESSAGE_TYPES.includes(v as MockMessageType)
+    ? (v as MockMessageType)
+    : "text";
 }
 
 export function mapChannel(api: ApiLineChannel): MockChannel {

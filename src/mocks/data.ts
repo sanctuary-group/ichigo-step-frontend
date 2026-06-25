@@ -49,7 +49,16 @@ export type MockFriend = {
   pinned?: boolean;
 };
 
-export type MockMessageType = "text" | "image" | "flex" | "sticker";
+export type MockMessageType =
+  | "text"
+  | "image"
+  | "sticker"
+  | "video"
+  | "audio"
+  | "file"
+  | "location"
+  | "flex"
+  | "postback";
 
 export type MockMessage = {
   id: string;

@@ -110,7 +110,7 @@ export default function QrActionsPage() {
   const rows = useMemo(() => qrActions ?? [], [qrActions]);
 
   const selectFolder = (folderId: string) => {
-    setSelectedFolderId((prev) => (prev === folderId ? null : folderId));
+    setSelectedFolderId(folderId);
     setSelectedIds(new Set());
   };
 

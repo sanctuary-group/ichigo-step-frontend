@@ -53,30 +53,40 @@ export function BulkMoveDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>フォルダを一括変更（{ids.length}件）</DialogTitle>
+          <DialogTitle>フォルダを一括変更</DialogTitle>
         </DialogHeader>
-        <div className="space-y-2">
-          <Label>移動先フォルダ</Label>
-          <select
-            value={folderId}
-            onChange={(e) => setFolderId(e.target.value)}
-            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </select>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            選択した {ids.length} 件の移動先フォルダを選択してください。
+          </p>
+          <div className="space-y-1.5">
+            <Label className="text-sm font-bold">移動先フォルダ</Label>
+            <select
+              value={folderId}
+              onChange={(e) => setFolderId(e.target.value)}
+              className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={processing}
+            >
+              キャンセル
+            </Button>
+            <Button type="button" onClick={submit} disabled={!folderId || processing}>
+              {processing ? "変更中..." : "変更"}
+            </Button>
+          </DialogFooter>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={processing}>
-            キャンセル
-          </Button>
-          <Button onClick={submit} disabled={!folderId || processing}>
-            {processing ? "変更中..." : "変更"}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

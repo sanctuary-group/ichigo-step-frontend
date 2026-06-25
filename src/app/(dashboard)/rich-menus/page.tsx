@@ -59,6 +59,7 @@ function formatYmd(iso: string | null): string {
 }
 
 export default function RichMenusPage() {
+  const router = useRouter();
   const { currentChannelId } = useAuth();
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -349,12 +350,16 @@ export default function RichMenusPage() {
                     return (
                       <tr
                         key={m.id}
+                        onClick={() => router.push(`/rich-menus/${m.id}/edit`)}
                         className={cn(
-                          "border-b border-border hover:bg-muted/30",
+                          "cursor-pointer border-b border-border hover:bg-muted/30",
                           checked && "bg-primary/5",
                         )}
                       >
-                        <td className="px-3 py-3">
+                        <td
+                          className="px-3 py-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <input
                             type="checkbox"
                             checked={checked}
@@ -407,7 +412,10 @@ export default function RichMenusPage() {
                         <td className="px-3 py-3 align-top text-xs text-muted-foreground tabular-nums">
                           {formatYmd(m.updated_at)}
                         </td>
-                        <td className="px-3 py-3 align-top">
+                        <td
+                          className="px-3 py-3 align-top"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <Link
                             href={`/rich-menus/${m.id}/display`}
                             className={cn(
@@ -424,7 +432,10 @@ export default function RichMenusPage() {
                             表示・停止する
                           </Link>
                         </td>
-                        <td className="px-3 py-3 align-top">
+                        <td
+                          className="px-3 py-3 align-top"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <div className="flex items-center gap-3 whitespace-nowrap">
                             <span className="inline-flex items-center gap-2 text-sm">
                               <FontAwesomeIcon

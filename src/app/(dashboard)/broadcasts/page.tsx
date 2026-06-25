@@ -422,8 +422,7 @@ export default function BroadcastsPage() {
       </div>
 
       <div className="text-center text-sm text-muted-foreground">
-        全{items.length}件中 {items.length === 0 ? "1−0" : `1−${items.length}`}
-        件を表示
+        全{items.length}件中 1–{items.length}件を表示
       </div>
     </div>
   );
@@ -480,7 +479,7 @@ function SortableHeader({
   return (
     <th
       className={cn(
-        "px-3 py-2 text-left font-bold text-foreground cursor-pointer hover:text-primary",
+        "px-3 py-2 text-left font-bold text-foreground",
         className
       )}
     >
