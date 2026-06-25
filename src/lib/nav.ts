@@ -43,7 +43,6 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "1:1 チャット",
         href: "/chat",
         icon: faCommentDots,
-        badge: 7,
         children: [
           { label: "1:1チャット", href: "/chat", icon: faCommentDots },
           { label: "チャット設定", href: "/chat/settings", icon: faGear },
