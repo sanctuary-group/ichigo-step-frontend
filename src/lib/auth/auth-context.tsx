@@ -14,7 +14,10 @@ import {
   logout as apiLogout,
   type CurrentUser,
 } from "@/lib/api/auth";
-import { setUnauthorizedHandler } from "@/lib/api/client";
+import {
+  setUnauthorizedHandler,
+  setInvalidChannelHandler,
+} from "@/lib/api/client";
 import {
   getCurrentChannelId,
   setCurrentChannelId as setStoreChannelId,
@@ -74,6 +77,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     return () => setUnauthorizedHandler(null);
   }, []);
+
+  // 読み取りで「選択中チャンネルが不正/非アクティブ」による 422 を受けたら、
+  // localStorage のスタール値を破棄してサーバー既定チャンネルへ復帰する。
+  useEffect(() => {
+    setInvalidChannelHandler(() => {
+      if (getCurrentChannelId() === null) return; // 既に解消済みなら何もしない
+      setStoreChannelId(null);
+      setChannelState(null);
+      void refresh(); // getCurrentUser でサーバー既定チャンネルを再取得して適用
+    });
+    return () => setInvalidChannelHandler(null);
+  }, [refresh]);
 
   const login = useCallback(
     async (params: { email: string; password: string }) => {
