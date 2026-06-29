@@ -81,6 +81,7 @@ function describeAction(a: GreetingAction, ctx: DescribeContext): string {
 }
 
 type FormShape = {
+    title: string;
     auto_reply_folder_id: number;
     trigger_type: AutoReplyTriggerType;
     match_mode: AutoReplyMatchMode;
@@ -134,6 +135,7 @@ export function AutoReplyFormInner({
     const [actionDialogOpen, setActionDialogOpen] = useState(false);
 
     const form = useFormState<FormShape>({
+        title: autoReply?.title ?? "",
         auto_reply_folder_id:
             autoReply?.auto_reply_folder_id ?? defaultFolderId ?? folders[0]?.id ?? 0,
         trigger_type: autoReply?.trigger_type ?? "keyword",
@@ -196,6 +198,26 @@ export function AutoReplyFormInner({
         <>
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
                 <h1 className="text-lg font-bold tracking-tight">自動応答</h1>
+
+                {/* タイトル（管理名）— 一覧で識別する主たる名前。必須・最大50文字。 */}
+                <Section title="タイトル（管理名）">
+                    <Input
+                        value={form.data.title}
+                        onChange={(e) => form.setData("title", e.target.value)}
+                        maxLength={50}
+                        placeholder="一覧で表示する管理名（必須・50文字以内）"
+                        className="h-10 max-w-md"
+                        aria-required
+                    />
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                        ※ 必須。一覧での識別名になります（最大50文字）。
+                    </p>
+                    {form.errors.title && (
+                        <p className="mt-1 text-xs text-destructive">
+                            {form.errors.title}
+                        </p>
+                    )}
+                </Section>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-8">
                     {/* アクション稼働対象絞り込み */}

@@ -530,6 +530,7 @@ export type MockFormFolder = {
 
 export type MockAutoReply = {
   id: string;
+  title: string | null;
   folderId: string;
   triggerType: "keyword" | "follow" | "default";
   keyword: string;

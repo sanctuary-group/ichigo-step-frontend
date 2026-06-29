@@ -151,6 +151,7 @@ export type ApiScenario = {
 
 export type ApiAutoReply = {
   id: number;
+  title: string | null;
   auto_reply_folder_id: number | null;
   trigger_type: string;
   match_mode: string | null;

@@ -274,6 +274,9 @@ export default function AutoRepliesPage() {
                     稼働状況
                   </th>
                   <th className="px-3 py-3 text-left font-bold text-primary-foreground">
+                    タイトル
+                  </th>
+                  <th className="px-3 py-3 text-left font-bold text-primary-foreground">
                     キーワード
                   </th>
                   <th className="px-3 py-3 text-left font-bold text-primary-foreground w-56">
@@ -285,7 +288,7 @@ export default function AutoRepliesPage() {
                 {rows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="px-3 py-12 text-center text-sm text-muted-foreground"
                     >
                       自動応答が登録されていません。
@@ -335,10 +338,16 @@ export default function AutoRepliesPage() {
                         <td className="px-3 py-3 font-medium">
                           <Link
                             href={`/auto-replies/${r.id}/edit`}
-                            className="hover:underline"
+                            className={cn(
+                              "hover:underline",
+                              !r.title?.trim() && "text-muted-foreground italic",
+                            )}
                           >
-                            {keywordSummary(r)}
+                            {r.title?.trim() ? r.title : "（無題）"}
                           </Link>
+                        </td>
+                        <td className="px-3 py-3 text-xs text-muted-foreground">
+                          {keywordSummary(r)}
                         </td>
                         <td className="px-3 py-3 text-xs text-muted-foreground">
                           {scheduleSummary(r)}

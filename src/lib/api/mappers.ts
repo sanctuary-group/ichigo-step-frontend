@@ -151,6 +151,7 @@ export function mapAutoReply(api: ApiAutoReply): MockAutoReply {
     !api.schedule_type || api.schedule_type === "always" ? "24時間対応" : "期間指定";
   return {
     id: s(api.id),
+    title: api.title ?? null,
     folderId: api.auto_reply_folder_id != null ? s(api.auto_reply_folder_id) : "",
     triggerType,
     keyword: (api.keywords ?? []).join("、"),

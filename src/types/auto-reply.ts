@@ -18,6 +18,7 @@ export type AutoReplyFolder = {
 export type AutoReply = {
     id: number;
     organization_id: number;
+    title: string | null;
     auto_reply_folder_id: number | null;
     trigger_type: AutoReplyTriggerType;
     match_mode: AutoReplyMatchMode;
