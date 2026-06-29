@@ -18,6 +18,9 @@ import {
   faCircleInfo,
   faDownload,
   faEllipsis,
+  faArrowUp,
+  faArrowDown,
+  faCheck,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
@@ -46,8 +49,9 @@ import {
   bulkDeleteQrActions,
   deleteQrAction,
   toggleQrAction,
+  reorderQrActions,
 } from "@/lib/api/qr-actions";
-import { fetchFolders, createFolder, deleteFolder } from "@/lib/api/folders";
+import { fetchFolders, createFolder, deleteFolder, reorderFolders } from "@/lib/api/folders";
 import type { Folder } from "@/lib/api/folders";
 import { useResource } from "@/lib/api/use-resource";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -90,6 +94,8 @@ export default function QrActionsPage() {
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [qrDialog, setQrDialog] = useState<QrAction | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [folderReorder, setFolderReorder] = useState(false);
+  const [itemReorder, setItemReorder] = useState(false);
 
   const { data: folders, mutate: mutateFolders } = useResource(
     currentChannelId ? `qr-action-folders:${currentChannelId}` : null,
@@ -110,8 +116,34 @@ export default function QrActionsPage() {
   const rows = useMemo(() => qrActions ?? [], [qrActions]);
 
   const selectFolder = (folderId: string) => {
+    if (folderReorder) return;
     setSelectedFolderId(folderId);
     setSelectedIds(new Set());
+  };
+
+  const moveFolder = async (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (
+      j < 0 ||
+      j >= folderList.length ||
+      folderList[index].isSystem ||
+      folderList[j].isSystem
+    ) {
+      return;
+    }
+    const ids = folderList.map((f) => Number(f.id));
+    [ids[index], ids[j]] = [ids[j], ids[index]];
+    await reorderFolders("qr-action-folders", ids);
+    mutateFolders();
+  };
+
+  const moveItem = async (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (j < 0 || j >= rows.length) return;
+    const ids = rows.map((q) => q.id);
+    [ids[index], ids[j]] = [ids[j], ids[index]];
+    await reorderQrActions(ids);
+    mutate();
   };
 
   const onSearch = (e: FormEvent) => {
@@ -206,23 +238,33 @@ export default function QrActionsPage() {
                 <FontAwesomeIcon icon={faFolderPlus} className="size-3" />
                 フォルダ追加
               </Button>
-              <Button variant="outline" size="sm" className="flex-1 h-9 px-2" disabled>
-                <FontAwesomeIcon icon={faArrowsUpDown} className="size-3" />
-                並べ替え
+              <Button
+                variant={folderReorder ? "default" : "outline"}
+                size="sm"
+                className="flex-1 h-9 px-2"
+                onClick={() => setFolderReorder((v) => !v)}
+              >
+                <FontAwesomeIcon
+                  icon={folderReorder ? faCheck : faArrowsUpDown}
+                  className="size-3"
+                />
+                {folderReorder ? "完了" : "並べ替え"}
               </Button>
             </div>
             <ul className="flex-1 overflow-y-auto p-2 space-y-1">
-              {folderList.map((f) => {
+              {folderList.map((f, idx) => {
                 const active = f.id === selectedFolderId;
                 return (
                   <li key={f.id} className="group flex items-center gap-1">
                     <button
                       onClick={() => selectFolder(f.id)}
+                      disabled={folderReorder}
                       className={cn(
                         "flex-1 text-left px-3 py-2 rounded-md text-sm transition-colors min-w-0 flex items-center justify-between gap-2",
                         active
                           ? "bg-muted text-foreground"
                           : "text-foreground hover:bg-muted/50",
+                        folderReorder && "cursor-default hover:bg-transparent",
                       )}
                     >
                       <span className="truncate">{f.name}</span>
@@ -230,15 +272,36 @@ export default function QrActionsPage() {
                         ({f.itemsCount ?? 0})
                       </span>
                     </button>
-                    {!f.isSystem && (
-                      <button
-                        onClick={() => onDeleteFolder(f)}
-                        className="grid place-items-center size-7 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                        aria-label="削除"
-                      >
-                        <FontAwesomeIcon icon={faTrashCan} className="size-3" />
-                      </button>
-                    )}
+                    {folderReorder
+                      ? !f.isSystem && (
+                          <span className="flex items-center">
+                            <button
+                              onClick={() => moveFolder(idx, -1)}
+                              disabled={folderList[idx - 1]?.isSystem ?? true}
+                              className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                              aria-label="上へ"
+                            >
+                              <FontAwesomeIcon icon={faArrowUp} className="size-3" />
+                            </button>
+                            <button
+                              onClick={() => moveFolder(idx, 1)}
+                              disabled={idx >= folderList.length - 1}
+                              className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                              aria-label="下へ"
+                            >
+                              <FontAwesomeIcon icon={faArrowDown} className="size-3" />
+                            </button>
+                          </span>
+                        )
+                      : !f.isSystem && (
+                          <button
+                            onClick={() => onDeleteFolder(f)}
+                            className="grid place-items-center size-7 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                            aria-label="削除"
+                          >
+                            <FontAwesomeIcon icon={faTrashCan} className="size-3" />
+                          </button>
+                        )}
                   </li>
                 );
               })}
@@ -256,13 +319,27 @@ export default function QrActionsPage() {
 
         <section className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-border flex-wrap">
-            <button
-              onClick={() => setCreateOpen(true)}
-              className="inline-flex items-center justify-center gap-1 h-9 px-3 rounded-md text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
-            >
-              <FontAwesomeIcon icon={faPlus} className="size-3" />
-              新規作成
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCreateOpen(true)}
+                className="inline-flex items-center justify-center gap-1 h-9 px-3 rounded-md text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors"
+              >
+                <FontAwesomeIcon icon={faPlus} className="size-3" />
+                新規作成
+              </button>
+              <Button
+                variant={itemReorder ? "default" : "outline"}
+                size="sm"
+                className="h-9"
+                onClick={() => setItemReorder((v) => !v)}
+              >
+                <FontAwesomeIcon
+                  icon={itemReorder ? faCheck : faArrowsUpDown}
+                  className="size-3"
+                />
+                {itemReorder ? "完了" : "並べ替え"}
+              </Button>
+            </div>
             <div className="flex items-center gap-2">
               {!folderVisible && (
                 <Button
@@ -361,24 +438,48 @@ export default function QrActionsPage() {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((q) => {
+                  rows.map((q, rowIdx) => {
                     const checked = selectedIds.has(q.id);
                     return (
                       <tr
                         key={q.id}
-                        onClick={() => router.push(`/qr-actions/${q.id}/edit`)}
+                        onClick={() =>
+                          !itemReorder && router.push(`/qr-actions/${q.id}/edit`)
+                        }
                         className={cn(
-                          "border-b border-border hover:bg-muted/30 cursor-pointer",
+                          "border-b border-border hover:bg-muted/30",
+                          !itemReorder && "cursor-pointer",
                           checked && "bg-primary/5",
                         )}
                       >
                         <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleRow(q.id)}
-                            className="size-4 rounded border-border accent-primary"
-                          />
+                          {itemReorder ? (
+                            <div className="inline-flex items-center">
+                              <button
+                                onClick={() => moveItem(rowIdx, -1)}
+                                disabled={rowIdx === 0}
+                                className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                                aria-label="上へ"
+                              >
+                                <FontAwesomeIcon icon={faArrowUp} className="size-3" />
+                              </button>
+                              <button
+                                onClick={() => moveItem(rowIdx, 1)}
+                                disabled={rowIdx === rows.length - 1}
+                                className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                                aria-label="下へ"
+                              >
+                                <FontAwesomeIcon icon={faArrowDown} className="size-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleRow(q.id)}
+                              className="size-4 rounded border-border accent-primary"
+                            />
+                          )}
                         </td>
                         <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-2">
@@ -395,6 +496,7 @@ export default function QrActionsPage() {
                             <Switch
                               checked={q.is_active}
                               onCheckedChange={() => toggleActive(q)}
+                              disabled={itemReorder}
                               aria-label={q.is_active ? "停止する" : "稼働する"}
                             />
                           </div>

@@ -10,6 +10,9 @@ import {
   faTrashCan,
   faFolderTree,
   faBookOpen,
+  faArrowUp,
+  faArrowDown,
+  faCheck,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
@@ -19,10 +22,12 @@ import {
   fetchAutoRepliesRaw,
   deleteAutoReply,
   toggleAutoReply,
+  reorderAutoReplies,
 } from "@/lib/api/auto-replies";
 import {
   fetchFolders,
   deleteFolder as deleteFolderApi,
+  reorderFolders,
   type Folder,
 } from "@/lib/api/folders";
 import type { ApiAutoReply } from "@/lib/api/types";
@@ -59,6 +64,8 @@ export default function AutoRepliesPage() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [folderReorder, setFolderReorder] = useState(false);
+  const [itemReorder, setItemReorder] = useState(false);
 
   const { data: folders, mutate: mutateFolders } = useResource(
     currentChannelId ? `auto-reply-folders:${currentChannelId}` : null,
@@ -87,8 +94,36 @@ export default function AutoRepliesPage() {
   };
 
   const selectFolder = (id: string) => {
+    if (folderReorder) return; // 並べ替え中は選択を無効化
     setSelectedFolderId(id);
     setSelectedIds(new Set());
+  };
+
+  // フォルダ並べ替え（システムフォルダは移動対象外）。
+  const moveFolder = async (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (
+      j < 0 ||
+      j >= folderList.length ||
+      folderList[index].isSystem ||
+      folderList[j].isSystem
+    ) {
+      return;
+    }
+    const ids = folderList.map((f) => Number(f.id));
+    [ids[index], ids[j]] = [ids[j], ids[index]];
+    await reorderFolders("auto-reply-folders", ids);
+    mutateFolders();
+  };
+
+  // 項目並べ替え。
+  const moveItem = async (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (j < 0 || j >= rows.length) return;
+    const ids = rows.map((r) => r.id);
+    [ids[index], ids[j]] = [ids[j], ids[index]];
+    await reorderAutoReplies(ids);
+    mutate();
   };
 
   const toggleActive = async (r: ApiAutoReply) => {
@@ -173,26 +208,36 @@ export default function AutoRepliesPage() {
               </button>
               <button
                 type="button"
-                disabled
-                className="grid place-items-center size-7 rounded hover:bg-muted text-muted-foreground disabled:opacity-40"
-                aria-label="並べ替え"
+                onClick={() => setFolderReorder((v) => !v)}
+                className={cn(
+                  "grid place-items-center size-7 rounded text-muted-foreground",
+                  folderReorder
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-muted",
+                )}
+                aria-label={folderReorder ? "並べ替えを完了" : "並べ替え"}
               >
-                <FontAwesomeIcon icon={faArrowsUpDown} className="size-3.5" />
+                <FontAwesomeIcon
+                  icon={folderReorder ? faCheck : faArrowsUpDown}
+                  className="size-3.5"
+                />
               </button>
             </div>
           </div>
           <ul className="flex-1 overflow-y-auto px-2 space-y-1">
-            {folderList.map((f) => {
+            {folderList.map((f, idx) => {
               const active = f.id === selectedFolderId;
               return (
                 <li key={f.id} className="group flex items-center gap-1">
                   <button
                     onClick={() => selectFolder(f.id)}
+                    disabled={folderReorder}
                     className={cn(
                       "flex-1 text-left px-3 py-2 rounded-md text-sm transition-colors min-w-0 flex items-center justify-between gap-2",
                       active
                         ? "bg-muted text-foreground"
                         : "text-foreground hover:bg-muted/50",
+                      folderReorder && "cursor-default hover:bg-transparent",
                     )}
                   >
                     <span className="truncate">{f.name}</span>
@@ -200,15 +245,36 @@ export default function AutoRepliesPage() {
                       ({f.itemsCount ?? 0})
                     </span>
                   </button>
-                  {!f.isSystem && (
-                    <button
-                      onClick={() => handleDeleteFolder(f)}
-                      className="grid place-items-center size-7 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                      aria-label="削除"
-                    >
-                      <FontAwesomeIcon icon={faTrashCan} className="size-3" />
-                    </button>
-                  )}
+                  {folderReorder
+                    ? !f.isSystem && (
+                        <span className="flex items-center">
+                          <button
+                            onClick={() => moveFolder(idx, -1)}
+                            disabled={folderList[idx - 1]?.isSystem ?? true}
+                            className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                            aria-label="上へ"
+                          >
+                            <FontAwesomeIcon icon={faArrowUp} className="size-3" />
+                          </button>
+                          <button
+                            onClick={() => moveFolder(idx, 1)}
+                            disabled={idx >= folderList.length - 1}
+                            className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                            aria-label="下へ"
+                          >
+                            <FontAwesomeIcon icon={faArrowDown} className="size-3" />
+                          </button>
+                        </span>
+                      )
+                    : !f.isSystem && (
+                        <button
+                          onClick={() => handleDeleteFolder(f)}
+                          className="grid place-items-center size-7 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label="削除"
+                        >
+                          <FontAwesomeIcon icon={faTrashCan} className="size-3" />
+                        </button>
+                      )}
                 </li>
               );
             })}
@@ -227,11 +293,19 @@ export default function AutoRepliesPage() {
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
-                disabled
-                className="h-9 bg-zinc-500 hover:bg-zinc-600 text-white disabled:opacity-50"
+                onClick={() => setItemReorder((v) => !v)}
+                className={cn(
+                  "h-9 text-white",
+                  itemReorder
+                    ? "bg-primary hover:bg-primary/90"
+                    : "bg-zinc-500 hover:bg-zinc-600",
+                )}
               >
-                <FontAwesomeIcon icon={faArrowsUpDown} className="size-3" />
-                並べ替え
+                <FontAwesomeIcon
+                  icon={itemReorder ? faCheck : faArrowsUpDown}
+                  className="size-3"
+                />
+                {itemReorder ? "完了" : "並べ替え"}
               </Button>
               <Button
                 size="sm"
@@ -295,7 +369,7 @@ export default function AutoRepliesPage() {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((r) => {
+                  rows.map((r, rowIdx) => {
                     const checked = selectedIds.has(r.id);
                     return (
                       <tr
@@ -306,12 +380,33 @@ export default function AutoRepliesPage() {
                         )}
                       >
                         <td className="px-3 py-3">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleRow(r.id)}
-                            className="size-4 rounded border-border accent-primary"
-                          />
+                          {itemReorder ? (
+                            <div className="inline-flex items-center">
+                              <button
+                                onClick={() => moveItem(rowIdx, -1)}
+                                disabled={rowIdx === 0}
+                                className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                                aria-label="上へ"
+                              >
+                                <FontAwesomeIcon icon={faArrowUp} className="size-3" />
+                              </button>
+                              <button
+                                onClick={() => moveItem(rowIdx, 1)}
+                                disabled={rowIdx === rows.length - 1}
+                                className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                                aria-label="下へ"
+                              >
+                                <FontAwesomeIcon icon={faArrowDown} className="size-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleRow(r.id)}
+                              className="size-4 rounded border-border accent-primary"
+                            />
+                          )}
                         </td>
                         <td className="px-3 py-3 text-xs text-muted-foreground tabular-nums">
                           {formatYmd(r.created_at)}
@@ -321,6 +416,7 @@ export default function AutoRepliesPage() {
                             <Switch
                               checked={r.is_active}
                               onCheckedChange={() => toggleActive(r)}
+                              disabled={itemReorder}
                               aria-label={r.is_active ? "停止する" : "稼働する"}
                             />
                             <span
@@ -336,15 +432,27 @@ export default function AutoRepliesPage() {
                           </div>
                         </td>
                         <td className="px-3 py-3 font-medium">
-                          <Link
-                            href={`/auto-replies/${r.id}/edit`}
-                            className={cn(
-                              "hover:underline",
-                              !r.title?.trim() && "text-muted-foreground italic",
-                            )}
-                          >
-                            {r.title?.trim() ? r.title : "（無題）"}
-                          </Link>
+                          {itemReorder ? (
+                            <span
+                              className={cn(
+                                !r.title?.trim() &&
+                                  "text-muted-foreground italic",
+                              )}
+                            >
+                              {r.title?.trim() ? r.title : "（無題）"}
+                            </span>
+                          ) : (
+                            <Link
+                              href={`/auto-replies/${r.id}/edit`}
+                              className={cn(
+                                "hover:underline",
+                                !r.title?.trim() &&
+                                  "text-muted-foreground italic",
+                              )}
+                            >
+                              {r.title?.trim() ? r.title : "（無題）"}
+                            </Link>
+                          )}
                         </td>
                         <td className="px-3 py-3 text-xs text-muted-foreground">
                           {keywordSummary(r)}

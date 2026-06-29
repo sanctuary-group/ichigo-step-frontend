@@ -176,3 +176,8 @@ export async function bulkMoveRichMenus(
     body: { ids, folder_id: Number(folderId) },
   });
 }
+
+/** POST /rich-menus/reorder（並べ替え後の id 配列）。 */
+export async function reorderRichMenus(ids: number[]): Promise<void> {
+  await apiFetch("/rich-menus/reorder", { method: "POST", body: { ids } });
+}

@@ -15,16 +15,20 @@ import {
   faUpRightFromSquare,
   faCopy,
   faChartSimple,
+  faArrowUp,
+  faArrowDown,
+  faCheck,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
 import { GuideButton } from "@/components/guide-button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { fetchForms, bulkDeleteForms, deleteForm } from "@/lib/api/forms";
+import { fetchForms, bulkDeleteForms, deleteForm, reorderForms } from "@/lib/api/forms";
 import {
   fetchFolders,
   deleteFolder as deleteFolderApi,
+  reorderFolders,
   type Folder,
 } from "@/lib/api/folders";
 import { useResource } from "@/lib/api/use-resource";
@@ -44,6 +48,8 @@ export default function FormsPage() {
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [folderReorder, setFolderReorder] = useState(false);
+  const [itemReorder, setItemReorder] = useState(false);
 
   const { data: folders, mutate: mutateFolders } = useResource(
     currentChannelId ? `form-folders:${currentChannelId}` : null,
@@ -81,8 +87,34 @@ export default function FormsPage() {
   };
 
   const selectFolder = (id: string) => {
+    if (folderReorder) return;
     setSelectedFolderId(id);
     setSelectedIds(new Set());
+  };
+
+  const moveFolder = async (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (
+      j < 0 ||
+      j >= folderList.length ||
+      folderList[index].isSystem ||
+      folderList[j].isSystem
+    ) {
+      return;
+    }
+    const ids = folderList.map((f) => Number(f.id));
+    [ids[index], ids[j]] = [ids[j], ids[index]];
+    await reorderFolders("form-folders", ids);
+    mutateFolders();
+  };
+
+  const moveItem = async (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (j < 0 || j >= rows.length) return;
+    const ids = rows.map((f) => Number(f.id));
+    [ids[index], ids[j]] = [ids[j], ids[index]];
+    await reorderForms(ids);
+    mutate();
   };
 
   const handleDeleteForm = async (f: MockForm) => {
@@ -175,27 +207,32 @@ export default function FormsPage() {
                 フォルダ追加
               </Button>
               <Button
-                variant="outline"
+                variant={folderReorder ? "default" : "outline"}
                 size="sm"
                 className="flex-1 h-9 px-2"
-                disabled
+                onClick={() => setFolderReorder((v) => !v)}
               >
-                <FontAwesomeIcon icon={faArrowsUpDown} className="size-3" />
-                並べ替え
+                <FontAwesomeIcon
+                  icon={folderReorder ? faCheck : faArrowsUpDown}
+                  className="size-3"
+                />
+                {folderReorder ? "完了" : "並べ替え"}
               </Button>
             </div>
             <ul className="flex-1 overflow-y-auto p-2 space-y-1">
-              {folderList.map((f) => {
+              {folderList.map((f, idx) => {
                 const active = f.id === selectedFolderId;
                 return (
                   <li key={f.id} className="group flex items-center gap-1">
                     <button
                       onClick={() => selectFolder(f.id)}
+                      disabled={folderReorder}
                       className={cn(
                         "flex-1 text-left px-3 py-2 rounded-md text-sm transition-colors min-w-0 flex items-center justify-between gap-2",
                         active
                           ? "bg-muted text-foreground"
                           : "text-foreground hover:bg-muted/50",
+                        folderReorder && "cursor-default hover:bg-transparent",
                       )}
                     >
                       <span className="truncate">{f.name}</span>
@@ -203,15 +240,36 @@ export default function FormsPage() {
                         ({f.itemsCount ?? 0})
                       </span>
                     </button>
-                    {!f.isSystem && (
-                      <button
-                        onClick={() => handleDeleteFolder(f)}
-                        className="grid place-items-center size-7 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                        aria-label="削除"
-                      >
-                        <FontAwesomeIcon icon={faTrashCan} className="size-3" />
-                      </button>
-                    )}
+                    {folderReorder
+                      ? !f.isSystem && (
+                          <span className="flex items-center">
+                            <button
+                              onClick={() => moveFolder(idx, -1)}
+                              disabled={folderList[idx - 1]?.isSystem ?? true}
+                              className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                              aria-label="上へ"
+                            >
+                              <FontAwesomeIcon icon={faArrowUp} className="size-3" />
+                            </button>
+                            <button
+                              onClick={() => moveFolder(idx, 1)}
+                              disabled={idx >= folderList.length - 1}
+                              className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                              aria-label="下へ"
+                            >
+                              <FontAwesomeIcon icon={faArrowDown} className="size-3" />
+                            </button>
+                          </span>
+                        )
+                      : !f.isSystem && (
+                          <button
+                            onClick={() => handleDeleteFolder(f)}
+                            className="grid place-items-center size-7 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                            aria-label="削除"
+                          >
+                            <FontAwesomeIcon icon={faTrashCan} className="size-3" />
+                          </button>
+                        )}
                   </li>
                 );
               })}
@@ -237,9 +295,17 @@ export default function FormsPage() {
                 <FontAwesomeIcon icon={faPlus} className="size-3" />
                 新規作成
               </button>
-              <Button variant="outline" size="sm" className="h-9" disabled>
-                <FontAwesomeIcon icon={faArrowsUpDown} className="size-3" />
-                並べ替え
+              <Button
+                variant={itemReorder ? "default" : "outline"}
+                size="sm"
+                className="h-9"
+                onClick={() => setItemReorder((v) => !v)}
+              >
+                <FontAwesomeIcon
+                  icon={itemReorder ? faCheck : faArrowsUpDown}
+                  className="size-3"
+                />
+                {itemReorder ? "完了" : "並べ替え"}
               </Button>
             </div>
             <div className="flex items-center gap-2">
@@ -329,7 +395,7 @@ export default function FormsPage() {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((f) => {
+                  rows.map((f, rowIdx) => {
                     const checked = selectedIds.has(f.id);
                     const published = f.status === "published";
                     return (
@@ -341,23 +407,48 @@ export default function FormsPage() {
                         )}
                       >
                         <td className="px-3 py-3">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleRow(f.id)}
-                            className="size-4 rounded border-border accent-primary"
-                          />
+                          {itemReorder ? (
+                            <div className="inline-flex items-center">
+                              <button
+                                onClick={() => moveItem(rowIdx, -1)}
+                                disabled={rowIdx === 0}
+                                className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                                aria-label="上へ"
+                              >
+                                <FontAwesomeIcon icon={faArrowUp} className="size-3" />
+                              </button>
+                              <button
+                                onClick={() => moveItem(rowIdx, 1)}
+                                disabled={rowIdx === rows.length - 1}
+                                className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                                aria-label="下へ"
+                              >
+                                <FontAwesomeIcon icon={faArrowDown} className="size-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleRow(f.id)}
+                              className="size-4 rounded border-border accent-primary"
+                            />
+                          )}
                         </td>
                         <td className="px-3 py-3 text-xs">
                           <StatusBadge status={f.status} />
                         </td>
                         <td className="px-3 py-3 font-medium">
-                          <Link
-                            href={`/forms/${f.id}/edit`}
-                            className="hover:underline"
-                          >
-                            {f.name}
-                          </Link>
+                          {itemReorder ? (
+                            <span>{f.name}</span>
+                          ) : (
+                            <Link
+                              href={`/forms/${f.id}/edit`}
+                              className="hover:underline"
+                            >
+                              {f.name}
+                            </Link>
+                          )}
                         </td>
                         <td className="px-3 py-3 text-xs text-muted-foreground">
                           {published && f.distributionUrl ? (

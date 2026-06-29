@@ -67,3 +67,8 @@ export async function toggleAutoReply(id: string): Promise<MockAutoReply> {
   });
   return mapAutoReply(data);
 }
+
+/** POST /auto-replies/reorder（並べ替え後の id 配列）。 */
+export async function reorderAutoReplies(ids: number[]): Promise<void> {
+  await apiFetch("/auto-replies/reorder", { method: "POST", body: { ids } });
+}

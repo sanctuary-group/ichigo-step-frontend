@@ -19,6 +19,9 @@ import {
   faUser,
   faEllipsis,
   faChartColumn,
+  faArrowUp,
+  faArrowDown,
+  faCheck,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
@@ -35,11 +38,13 @@ import {
   deleteRichMenu as apiDeleteRichMenu,
   bulkDeleteRichMenus,
   bulkMoveRichMenus,
+  reorderRichMenus,
 } from "@/lib/api/rich-menus";
 import {
   fetchFolders,
   createFolder,
   deleteFolder as apiDeleteFolder,
+  reorderFolders,
   type Folder,
 } from "@/lib/api/folders";
 import type { RichMenu } from "@/types/rich-menu";
@@ -69,6 +74,8 @@ export default function RichMenusPage() {
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+  const [folderReorder, setFolderReorder] = useState(false);
+  const [itemReorder, setItemReorder] = useState(false);
 
   const { data: folders, mutate: mutateFolders } = useResource(
     currentChannelId ? `rich-menu-folders:${currentChannelId}` : null,
@@ -89,8 +96,34 @@ export default function RichMenusPage() {
   const richMenus: RichMenuRow[] = richMenusData ?? [];
 
   const selectFolder = (folderId: string) => {
+    if (folderReorder) return;
     setSelectedFolderId((cur) => (cur === folderId ? null : folderId));
     setSelectedIds(new Set());
+  };
+
+  const moveFolder = async (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (
+      j < 0 ||
+      j >= folderList.length ||
+      folderList[index].isSystem ||
+      folderList[j].isSystem
+    ) {
+      return;
+    }
+    const ids = folderList.map((f) => Number(f.id));
+    [ids[index], ids[j]] = [ids[j], ids[index]];
+    await reorderFolders("rich-menu-folders", ids);
+    mutateFolders();
+  };
+
+  const moveItem = async (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (j < 0 || j >= richMenus.length) return;
+    const ids = richMenus.map((m) => m.id);
+    [ids[index], ids[j]] = [ids[j], ids[index]];
+    await reorderRichMenus(ids);
+    mutate();
   };
 
   const onSearch = (e: FormEvent) => {
@@ -199,26 +232,36 @@ export default function RichMenusPage() {
                 </button>
                 <button
                   type="button"
-                  disabled
-                  className="grid place-items-center size-7 rounded hover:bg-muted text-muted-foreground disabled:opacity-40"
-                  aria-label="並べ替え"
+                  onClick={() => setFolderReorder((v) => !v)}
+                  className={cn(
+                    "grid place-items-center size-7 rounded text-muted-foreground",
+                    folderReorder
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted",
+                  )}
+                  aria-label={folderReorder ? "並べ替えを完了" : "並べ替え"}
                 >
-                  <FontAwesomeIcon icon={faArrowsUpDown} className="size-3.5" />
+                  <FontAwesomeIcon
+                    icon={folderReorder ? faCheck : faArrowsUpDown}
+                    className="size-3.5"
+                  />
                 </button>
               </div>
             </div>
             <ul className="flex-1 overflow-y-auto px-2 space-y-1">
-              {folderList.map((f) => {
+              {folderList.map((f, idx) => {
                 const active = f.id === selectedFolderId;
                 return (
                   <li key={f.id} className="group flex items-center gap-1">
                     <button
                       onClick={() => selectFolder(f.id)}
+                      disabled={folderReorder}
                       className={cn(
                         "flex-1 text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between gap-2 min-w-0",
                         active
                           ? "bg-muted text-foreground"
                           : "text-foreground hover:bg-muted/50",
+                        folderReorder && "cursor-default hover:bg-transparent",
                       )}
                     >
                       <span className="truncate">{f.name}</span>
@@ -226,15 +269,36 @@ export default function RichMenusPage() {
                         ({f.itemsCount ?? 0})
                       </span>
                     </button>
-                    {!f.isSystem && (
-                      <button
-                        onClick={() => deleteFolder(f)}
-                        className="grid place-items-center size-7 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                        aria-label="削除"
-                      >
-                        <FontAwesomeIcon icon={faTrashCan} className="size-3" />
-                      </button>
-                    )}
+                    {folderReorder
+                      ? !f.isSystem && (
+                          <span className="flex items-center">
+                            <button
+                              onClick={() => moveFolder(idx, -1)}
+                              disabled={folderList[idx - 1]?.isSystem ?? true}
+                              className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                              aria-label="上へ"
+                            >
+                              <FontAwesomeIcon icon={faArrowUp} className="size-3" />
+                            </button>
+                            <button
+                              onClick={() => moveFolder(idx, 1)}
+                              disabled={idx >= folderList.length - 1}
+                              className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                              aria-label="下へ"
+                            >
+                              <FontAwesomeIcon icon={faArrowDown} className="size-3" />
+                            </button>
+                          </span>
+                        )
+                      : !f.isSystem && (
+                          <button
+                            onClick={() => deleteFolder(f)}
+                            className="grid place-items-center size-7 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                            aria-label="削除"
+                          >
+                            <FontAwesomeIcon icon={faTrashCan} className="size-3" />
+                          </button>
+                        )}
                   </li>
                 );
               })}
@@ -280,9 +344,17 @@ export default function RichMenusPage() {
                 <FontAwesomeIcon icon={faClockRotateLeft} className="size-3.5" />
                 操作予約・履歴
               </Button>
-              <Button variant="outline" size="sm" className="h-9" disabled>
-                <FontAwesomeIcon icon={faArrowsUpDown} className="size-3.5" />
-                並べ替え
+              <Button
+                variant={itemReorder ? "default" : "outline"}
+                size="sm"
+                className="h-9"
+                onClick={() => setItemReorder((v) => !v)}
+              >
+                <FontAwesomeIcon
+                  icon={itemReorder ? faCheck : faArrowsUpDown}
+                  className="size-3.5"
+                />
+                {itemReorder ? "完了" : "並べ替え"}
               </Button>
               <Button variant="outline" size="sm" className="h-9" disabled>
                 <FontAwesomeIcon icon={faTrashCan} className="size-3.5" />
@@ -342,7 +414,7 @@ export default function RichMenusPage() {
                     </td>
                   </tr>
                 ) : (
-                  richMenus.map((m) => {
+                  richMenus.map((m, rowIdx) => {
                     const checked = selectedIds.has(m.id);
                     const actionCount = (m.areas ?? []).filter(
                       (a) => a.type !== "none",
@@ -350,9 +422,12 @@ export default function RichMenusPage() {
                     return (
                       <tr
                         key={m.id}
-                        onClick={() => router.push(`/rich-menus/${m.id}/edit`)}
+                        onClick={() =>
+                          !itemReorder && router.push(`/rich-menus/${m.id}/edit`)
+                        }
                         className={cn(
-                          "cursor-pointer border-b border-border hover:bg-muted/30",
+                          "border-b border-border hover:bg-muted/30",
+                          !itemReorder && "cursor-pointer",
                           checked && "bg-primary/5",
                         )}
                       >
@@ -360,18 +435,45 @@ export default function RichMenusPage() {
                           className="px-3 py-3"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleRow(m.id)}
-                            className="size-4 rounded border-border accent-primary"
-                            aria-label={`${m.name} を選択`}
-                          />
+                          {itemReorder ? (
+                            <div className="inline-flex items-center">
+                              <button
+                                onClick={() => moveItem(rowIdx, -1)}
+                                disabled={rowIdx === 0}
+                                className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                                aria-label="上へ"
+                              >
+                                <FontAwesomeIcon icon={faArrowUp} className="size-3" />
+                              </button>
+                              <button
+                                onClick={() => moveItem(rowIdx, 1)}
+                                disabled={rowIdx === richMenus.length - 1}
+                                className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                                aria-label="下へ"
+                              >
+                                <FontAwesomeIcon icon={faArrowDown} className="size-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleRow(m.id)}
+                              className="size-4 rounded border-border accent-primary"
+                              aria-label={`${m.name} を選択`}
+                            />
+                          )}
                         </td>
                         <td className="px-3 py-3 align-top">
                           <Link
                             href={`/rich-menus/${m.id}/edit`}
-                            className="group block w-40 cursor-pointer"
+                            onClick={(e) => itemReorder && e.preventDefault()}
+                            className={cn(
+                              "group block w-40",
+                              itemReorder
+                                ? "cursor-default"
+                                : "cursor-pointer",
+                            )}
                           >
                             <span className="block font-bold text-blue-600 dark:text-blue-400 group-hover:underline">
                               {m.name}

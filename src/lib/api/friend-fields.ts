@@ -95,3 +95,8 @@ export async function updateFriendField(
 export async function deleteFriendField(id: string): Promise<void> {
   await apiFetch(`/friend-fields/${id}`, { method: "DELETE" });
 }
+
+/** POST /friend-fields/reorder（並べ替え後の id 配列）。 */
+export async function reorderFriendFields(ids: number[]): Promise<void> {
+  await apiFetch("/friend-fields/reorder", { method: "POST", body: { ids } });
+}

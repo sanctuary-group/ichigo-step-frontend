@@ -175,3 +175,8 @@ export async function downloadQrActionDataCsv(
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+/** POST /qr-actions/reorder（並べ替え後の id 配列）。 */
+export async function reorderQrActions(ids: number[]): Promise<void> {
+  await apiFetch("/qr-actions/reorder", { method: "POST", body: { ids } });
+}

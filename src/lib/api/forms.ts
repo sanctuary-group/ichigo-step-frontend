@@ -72,3 +72,8 @@ export async function setFormPublished(id: string, published: boolean): Promise<
   });
   return mapForm(data);
 }
+
+/** POST /forms/reorder（並べ替え後の id 配列）。 */
+export async function reorderForms(ids: number[]): Promise<void> {
+  await apiFetch("/forms/reorder", { method: "POST", body: { ids } });
+}

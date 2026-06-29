@@ -49,3 +49,8 @@ export async function createFolder(feature: FolderFeature, name: string): Promis
 export async function deleteFolder(feature: FolderFeature, id: string): Promise<void> {
   await apiFetch(`/${feature}/${id}`, { method: "DELETE" });
 }
+
+/** POST /{feature}-folders/reorder（並べ替え後の id 配列）。 */
+export async function reorderFolders(feature: FolderFeature, ids: number[]): Promise<void> {
+  await apiFetch(`/${feature}/reorder`, { method: "POST", body: { ids } });
+}

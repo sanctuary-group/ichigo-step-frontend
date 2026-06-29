@@ -11,6 +11,9 @@ import {
   faFolderTree,
   faPenToSquare,
   faTrash,
+  faArrowUp,
+  faArrowDown,
+  faCheck,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
@@ -18,10 +21,12 @@ import { cn } from "@/lib/utils";
 import {
   fetchFriendFields,
   deleteFriendField,
+  reorderFriendFields,
 } from "@/lib/api/friend-fields";
 import {
   fetchFolders,
   deleteFolder as deleteFolderApi,
+  reorderFolders,
 } from "@/lib/api/folders";
 import { useResource } from "@/lib/api/use-resource";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -32,6 +37,8 @@ export default function FriendFieldsPage() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [folderReorder, setFolderReorder] = useState(false);
+  const [itemReorder, setItemReorder] = useState(false);
 
   const { data: folders, mutate: mutateFolders } = useResource(
     currentChannelId ? `friend-field-folders:${currentChannelId}` : null,
@@ -46,6 +53,31 @@ export default function FriendFieldsPage() {
     () => fetchFriendFields({ folder: selectedFolderId ?? undefined }),
   );
   const items = fields ?? [];
+
+  const moveFolder = async (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (
+      j < 0 ||
+      j >= folderList.length ||
+      folderList[index].isSystem ||
+      folderList[j].isSystem
+    ) {
+      return;
+    }
+    const ids = folderList.map((f) => Number(f.id));
+    [ids[index], ids[j]] = [ids[j], ids[index]];
+    await reorderFolders("friend-field-folders", ids);
+    mutateFolders();
+  };
+
+  const moveItem = async (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (j < 0 || j >= items.length) return;
+    const ids = items.map((f) => Number(f.id));
+    [ids[index], ids[j]] = [ids[j], ids[index]];
+    await reorderFriendFields(ids);
+    mutate();
+  };
 
   const deleteFolder = async (folderId: string) => {
     if (!confirm("このフォルダを削除しますか？")) return;
@@ -125,45 +157,79 @@ export default function FriendFieldsPage() {
               </button>
               <button
                 type="button"
-                disabled
-                className="grid place-items-center size-7 rounded text-muted-foreground/50"
-                aria-label="並べ替え"
+                onClick={() => setFolderReorder((v) => !v)}
+                className={cn(
+                  "grid place-items-center size-7 rounded text-muted-foreground",
+                  folderReorder
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-muted",
+                )}
+                aria-label={folderReorder ? "並べ替えを完了" : "並べ替え"}
               >
-                <FontAwesomeIcon icon={faArrowsUpDown} className="size-3.5" />
+                <FontAwesomeIcon
+                  icon={folderReorder ? faCheck : faArrowsUpDown}
+                  className="size-3.5"
+                />
               </button>
             </div>
           </div>
           <ul className="flex-1 overflow-y-auto px-2 space-y-1">
-            {folderList.map((f) => {
+            {folderList.map((f, idx) => {
               const active = f.id === selectedFolderId;
               return (
                 <li key={f.id} className="group flex items-center gap-1">
                   <button
                     onClick={() => {
+                      if (folderReorder) return;
                       setSelectedFolderId(f.id);
                       setSelectedIds(new Set());
                     }}
+                    disabled={folderReorder}
                     className={cn(
                       "flex-1 text-left px-3 py-2 rounded-md text-sm transition-colors min-w-0",
                       active
                         ? "bg-muted text-foreground"
                         : "text-foreground hover:bg-muted/50",
+                      folderReorder && "cursor-default hover:bg-transparent",
                     )}
                   >
                     <span className="truncate">
                       {f.name} ({f.itemsCount})
                     </span>
                   </button>
-                  {!f.isSystem && (
-                    <Button
-                      variant="ghost"
-                      className="size-7 p-0 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => deleteFolder(f.id)}
-                      aria-label="削除"
-                    >
-                      <FontAwesomeIcon icon={faTrash} className="size-3" />
-                    </Button>
-                  )}
+                  {folderReorder
+                    ? !f.isSystem && (
+                        <span className="flex items-center">
+                          <Button
+                            variant="ghost"
+                            className="size-7 p-0 text-muted-foreground disabled:opacity-30"
+                            onClick={() => moveFolder(idx, -1)}
+                            disabled={folderList[idx - 1]?.isSystem ?? true}
+                            aria-label="上へ"
+                          >
+                            <FontAwesomeIcon icon={faArrowUp} className="size-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className="size-7 p-0 text-muted-foreground disabled:opacity-30"
+                            onClick={() => moveFolder(idx, 1)}
+                            disabled={idx >= folderList.length - 1}
+                            aria-label="下へ"
+                          >
+                            <FontAwesomeIcon icon={faArrowDown} className="size-3" />
+                          </Button>
+                        </span>
+                      )
+                    : !f.isSystem && (
+                        <Button
+                          variant="ghost"
+                          className="size-7 p-0 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => deleteFolder(f.id)}
+                          aria-label="削除"
+                        >
+                          <FontAwesomeIcon icon={faTrash} className="size-3" />
+                        </Button>
+                      )}
                 </li>
               );
             })}
@@ -182,11 +248,19 @@ export default function FriendFieldsPage() {
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
-                disabled
-                className="h-9 bg-zinc-500 text-white opacity-50"
+                onClick={() => setItemReorder((v) => !v)}
+                className={cn(
+                  "h-9 text-white",
+                  itemReorder
+                    ? "bg-primary hover:bg-primary/90"
+                    : "bg-zinc-500 hover:bg-zinc-600",
+                )}
               >
-                <FontAwesomeIcon icon={faArrowsUpDown} className="size-3" />
-                並べ替え
+                <FontAwesomeIcon
+                  icon={itemReorder ? faCheck : faArrowsUpDown}
+                  className="size-3"
+                />
+                {itemReorder ? "完了" : "並べ替え"}
               </Button>
               <Button
                 size="sm"
@@ -250,7 +324,7 @@ export default function FriendFieldsPage() {
                     </td>
                   </tr>
                 ) : (
-                  items.map((f) => {
+                  items.map((f, rowIdx) => {
                     const checked = selectedIds.has(f.id);
                     return (
                       <tr
@@ -261,12 +335,33 @@ export default function FriendFieldsPage() {
                         )}
                       >
                         <td className="px-3 py-3">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleRow(f.id)}
-                            className="size-4 rounded border-border accent-primary"
-                          />
+                          {itemReorder ? (
+                            <div className="inline-flex items-center">
+                              <button
+                                onClick={() => moveItem(rowIdx, -1)}
+                                disabled={rowIdx === 0}
+                                className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                                aria-label="上へ"
+                              >
+                                <FontAwesomeIcon icon={faArrowUp} className="size-3" />
+                              </button>
+                              <button
+                                onClick={() => moveItem(rowIdx, 1)}
+                                disabled={rowIdx === items.length - 1}
+                                className="grid place-items-center size-7 rounded text-muted-foreground hover:bg-muted disabled:opacity-30"
+                                aria-label="下へ"
+                              >
+                                <FontAwesomeIcon icon={faArrowDown} className="size-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleRow(f.id)}
+                              className="size-4 rounded border-border accent-primary"
+                            />
+                          )}
                         </td>
                         <td className="px-3 py-3 text-xs text-muted-foreground tabular-nums">
                           {f.createdAt.slice(0, 10).replace(/-/g, "/")}

@@ -98,3 +98,8 @@ export async function saveScenario(
     body: payload,
   });
 }
+
+/** POST /scenarios/reorder（並べ替え後の id 配列）。 */
+export async function reorderScenarios(ids: number[]): Promise<void> {
+  await apiFetch("/scenarios/reorder", { method: "POST", body: { ids } });
+}
