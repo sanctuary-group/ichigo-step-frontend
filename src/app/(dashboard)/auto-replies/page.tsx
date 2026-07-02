@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -13,6 +13,8 @@ import {
   faArrowUp,
   faArrowDown,
   faCheck,
+  faEllipsis,
+  faCopy,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { Button } from "@/components/ui/button";
@@ -23,6 +25,7 @@ import {
   deleteAutoReply,
   toggleAutoReply,
   reorderAutoReplies,
+  duplicateAutoReply,
 } from "@/lib/api/auto-replies";
 import {
   fetchFolders,
@@ -128,6 +131,23 @@ export default function AutoRepliesPage() {
 
   const toggleActive = async (r: ApiAutoReply) => {
     await toggleAutoReply(String(r.id));
+    mutate();
+  };
+
+  const handleDuplicate = async (r: ApiAutoReply) => {
+    await duplicateAutoReply(String(r.id));
+    mutate();
+  };
+
+  const handleDelete = async (r: ApiAutoReply) => {
+    const label = r.title?.trim() ? r.title : "（無題）";
+    if (!confirm(`「${label}」を削除しますか？`)) return;
+    await deleteAutoReply(String(r.id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(r.id);
+      return next;
+    });
     mutate();
   };
 
@@ -356,13 +376,14 @@ export default function AutoRepliesPage() {
                   <th className="px-3 py-3 text-left font-bold text-primary-foreground w-56">
                     スケジュール
                   </th>
+                  <th className="w-12 px-3 py-3" />
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="px-3 py-12 text-center text-sm text-muted-foreground"
                     >
                       自動応答が登録されていません。
@@ -460,6 +481,14 @@ export default function AutoRepliesPage() {
                         <td className="px-3 py-3 text-xs text-muted-foreground">
                           {scheduleSummary(r)}
                         </td>
+                        <td className="px-3 py-3 text-right">
+                          {!itemReorder && (
+                            <RowActionsMenu
+                              onCopy={() => handleDuplicate(r)}
+                              onDelete={() => handleDelete(r)}
+                            />
+                          )}
+                        </td>
                       </tr>
                     );
                   })
@@ -476,5 +505,74 @@ export default function AutoRepliesPage() {
         onCreated={refresh}
       />
     </div>
+  );
+}
+
+function RowActionsMenu({
+  onCopy,
+  onDelete,
+}: {
+  onCopy: () => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, right: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+    }
+    setOpen((v) => !v);
+  };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggle}
+        aria-label="操作メニュー"
+        className="inline-flex items-center justify-center size-9 rounded-md hover:bg-muted text-muted-foreground"
+      >
+        <FontAwesomeIcon icon={faEllipsis} className="size-4" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            className="fixed z-50 min-w-36 overflow-hidden rounded-md border border-border bg-popover py-1 shadow-lg"
+            style={{ top: pos.top, right: pos.right }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onCopy();
+              }}
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-muted"
+            >
+              <FontAwesomeIcon
+                icon={faCopy}
+                className="size-4 text-muted-foreground"
+              />
+              コピー
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onDelete();
+              }}
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-destructive hover:bg-muted"
+            >
+              <FontAwesomeIcon icon={faTrashCan} className="size-4" />
+              削除
+            </button>
+          </div>
+        </>
+      )}
+    </>
   );
 }

@@ -72,3 +72,14 @@ export async function toggleAutoReply(id: string): Promise<MockAutoReply> {
 export async function reorderAutoReplies(ids: number[]): Promise<void> {
   await apiFetch("/auto-replies/reorder", { method: "POST", body: { ids } });
 }
+
+/**
+ * POST /auto-replies/{id}/duplicate — サーバー側で即複製。
+ * タイトル末尾に「 のコピー」付与・is_active=false で新規作成される。
+ */
+export async function duplicateAutoReply(id: string): Promise<MockAutoReply> {
+  const data = await apiFetch<ApiAutoReply>(`/auto-replies/${id}/duplicate`, {
+    method: "POST",
+  });
+  return mapAutoReply(data);
+}
